@@ -507,6 +507,8 @@ mod imp {
             }() {
                 error!("Snapshot canvas failed , Err: {e:?}");
             }
+
+            crate::perf::record_frame();
         }
     }
 

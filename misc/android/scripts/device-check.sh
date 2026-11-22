@@ -52,6 +52,17 @@ aapt2=$ANDROID_HOME/build-tools/$BUILD_TOOLS_VERSION/aapt2
   echo "## frame stats (recent frame rows)"
   "$ADB" shell dumpsys gfxinfo "$PACKAGE" framestats | head -60 || true
   echo
+  echo "## refresh rate"
+  "$ADB" shell dumpsys display 2>/dev/null |
+    grep -m1 -iE 'refreshRate' || true
+  echo
+  echo "## rnote perf (off by default; enable with 'just android-app-perf-on')"
+  "$ADB" logcat -d -v threadtime | grep -E 'rnote::perf' | tail -60 || true
+  echo
+  echo "## rnote perf gate (median_fps >= 55, p95_frame_ms <= 33)"
+  "$ADB" logcat -d -v threadtime |
+    grep -E 'rnote::perf.*frame_summary' | tail -1 || true
+  echo
   echo "## crashes"
   "$ADB" logcat -d -b crash -t 100 || true
   echo

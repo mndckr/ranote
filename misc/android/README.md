@@ -64,7 +64,14 @@ just android-app-build        # cross-compile rnote-ui + Gradle package
 just android-app-install      # adb install -r + launch
 just android-app-logcat       # filtered Gtk/Gdk/GLib/rnote/AndroidRuntime log
 just android-app-device-check # device, GPU, version, frame stats, memory, crashes, logcat
+just android-app-perf-on      # opt into the debug-only perf instrumentation (#12)
+just android-app-perf-off     # opt out again
 ```
+
+The perf instrumentation is off by default, debug-only, and logs frame timings,
+touch input-to-snapshot latency and RSS without ever touching note contents. See
+[`docs/android/performance.md`](../../docs/android/performance.md) for what it
+records and the 20-page device procedure.
 
 The toolchain smoke app (ticket #5):
 
@@ -251,6 +258,9 @@ Verified without an SDK/NDK/device:
   folder display and watcher gating for `content://` URIs (unit tests);
 - `cargo check -p rnote --target aarch64-linux-android --bin rnote` compiles the
   Android cfg paths (resvg SVG path, pure-Rust gettext, silent audio stub);
+- the perf recorder is unit-tested on desktop (percentiles, gate comparison,
+  RSS parsing, opt-in rules) and `bash -n` checks the perf-toggle/device-check
+  scripts;
 - pinned tags/commits resolve to the recorded revisions and the Gradle 9.6.0
   distribution checksum matches the pinned wrapper.
 
