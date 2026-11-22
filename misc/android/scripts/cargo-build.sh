@@ -47,19 +47,20 @@ shopt -u nullglob
 # knows its sysroot and target. llvm-ar/ranlib live next to it.
 toolchain_bin=$(dirname "$cc")
 ar=$toolchain_bin/llvm-ar
-[ -x "$ar" ] || ar=ar
-cxx_env=$cxx
-cc_env=$cc
+[ -x "$ar" ] || {
+  echo "error: llvm-ar not found next to the NDK clang at $ar" >&2
+  exit 1
+}
 
 # --- cargo -------------------------------------------------------------------
 cd "$repo_root"
 
 # env(1) is needed because cargo/cc target variables contain dashes.
 env \
-  "CC_$rust_target=$cc_env" \
-  "CXX_$rust_target=$cxx_env" \
+  "CC_$rust_target=$cc" \
+  "CXX_$rust_target=$cxx" \
   "AR_$rust_target=$ar" \
-  "CARGO_TARGET_$(echo "$rust_target" | tr 'a-z-' 'A-Z_')_LINKER=$cc_env" \
+  "CARGO_TARGET_$(echo "$rust_target" | tr 'a-z-' 'A-Z_')_LINKER=$cc" \
   PKG_CONFIG_ALLOW_CROSS=1 \
   PKG_CONFIG_LIBDIR="$pc_dir" \
   PKG_CONFIG_PATH="$pc_dir" \
