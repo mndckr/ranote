@@ -7,6 +7,7 @@ build_folder := "_mesonbuild"
 flatpak_app_folder := "_flatpak_app"
 flatpak_repo_folder := "_flatpak_repo"
 msys_env_prefix_path := "C:\\msys64\\ucrt64"
+android_dir := "misc/android"
 
 [private]
 linux_distr := `grep -o -E '^ID=([a-zA-Z0-9_]*)$' -r /etc/os-release | cut -d= -f2 | tr '[:upper:]' '[:lower:]'`
@@ -243,3 +244,30 @@ Make sure to authenticate and allow access first (`gh auth login --web --clipboa
 ci-update-actions:
     gh extension install github/gh-actions-lock
     gh actions-lock
+
+# Android smoke build (misc/android). Requires an SDK/NDK-capable Linux host;
+# see misc/android/README.md for pins and prerequisites.
+
+[doc('Install the pinned Android SDK/NDK, meson and pixiewood, then configure the smoke build.')]
+android-setup:
+    {{ android_dir }}/scripts/setup.sh
+
+[doc('Cross-compile GTK + libadwaita and package the smoke APK.')]
+android-build *ARGS:
+    {{ android_dir }}/scripts/build.sh {{ ARGS }}
+
+[doc('Install the built APK on the attached device/emulator and launch it.')]
+android-install:
+    {{ android_dir }}/scripts/install.sh
+
+[doc('Follow filtered logcat from the smoke app.')]
+android-logcat *ARGS:
+    {{ android_dir }}/scripts/logcat.sh {{ ARGS }}
+
+[doc('Collect device, GPU, app version, memory, frame and log data.')]
+android-device-check *ARGS:
+    {{ android_dir }}/scripts/device-check.sh {{ ARGS }}
+
+[doc('Remove generated Android build output and downloaded subprojects.')]
+android-clean:
+    rm -rf {{ android_dir }}/smoke/_pixiewood {{ android_dir }}/smoke/subprojects {{ android_dir }}/smoke/.buildconfig {{ android_dir }}/smoke/pixiewood.ini {{ android_dir }}/build

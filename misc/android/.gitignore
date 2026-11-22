@@ -1,0 +1,5 @@
+smoke/_pixiewood/
+smoke/subprojects/
+smoke/pixiewood.ini
+smoke/.buildconfig
+build/
