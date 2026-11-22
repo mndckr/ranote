@@ -1,4 +1,5 @@
 // Imports
+use crate::i18n::gettext;
 use crate::{appmenu::RnAppMenu, appwindow::RnAppWindow, canvasmenu::RnCanvasMenu};
 use gtk4::{
     CompositeTemplate, Label, ToggleButton, Widget, glib, prelude::*, subclass::prelude::*,
@@ -20,6 +21,14 @@ mod imp {
         pub(crate) left_sidebar_reveal_toggle: TemplateChild<ToggleButton>,
         #[template_child]
         pub(crate) right_sidebar_reveal_toggle: TemplateChild<ToggleButton>,
+        #[template_child]
+        pub(crate) new_tab_button: TemplateChild<gtk4::Button>,
+        #[template_child]
+        pub(crate) overview_button: TemplateChild<gtk4::Button>,
+        #[template_child]
+        pub(crate) focus_mode_button: TemplateChild<ToggleButton>,
+        #[template_child]
+        pub(crate) save_doc_button: TemplateChild<gtk4::Button>,
         #[template_child]
         pub(crate) canvasmenu: TemplateChild<RnCanvasMenu>,
         #[template_child]
@@ -103,6 +112,30 @@ impl RnMainHeader {
 
     pub(crate) fn init(&self, appwindow: &RnAppWindow) {
         let imp = self.imp();
+
+        // Icon-only buttons have no text for screen readers; give each one a name.
+        imp.left_sidebar_reveal_toggle
+            .get()
+            .update_property(&[gtk4::accessible::Property::Label(&gettext(
+                "Show/Hide Sidebar",
+            ))]);
+        imp.right_sidebar_reveal_toggle.get().update_property(&[
+            gtk4::accessible::Property::Label(&gettext("Show/Hide Sidebar")),
+        ]);
+        imp.new_tab_button
+            .get()
+            .update_property(&[gtk4::accessible::Property::Label(&gettext("New Tab"))]);
+        imp.overview_button
+            .get()
+            .update_property(&[gtk4::accessible::Property::Label(&gettext(
+                "View Open Tabs",
+            ))]);
+        imp.focus_mode_button
+            .get()
+            .update_property(&[gtk4::accessible::Property::Label(&gettext("Focus Mode"))]);
+        imp.save_doc_button
+            .get()
+            .update_property(&[gtk4::accessible::Property::Label(&gettext("Save Document"))]);
 
         imp.canvasmenu.get().init(appwindow);
         imp.appmenu.get().init(appwindow);

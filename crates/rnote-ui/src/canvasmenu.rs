@@ -1,5 +1,6 @@
 // Imports
 use crate::appwindow::RnAppWindow;
+use crate::i18n::gettext;
 use gtk4::{
     Button, CompositeTemplate, MenuButton, PopoverMenu, Widget, gio, glib, prelude::*,
     subclass::prelude::*,
@@ -51,6 +52,9 @@ mod imp {
         fn constructed(&self) {
             self.parent_constructed();
 
+            self.menubutton
+                .get()
+                .update_property(&[gtk4::accessible::Property::Label(&gettext("Canvas Menu"))]);
             self.menubutton
                 .get()
                 .set_popover(Some(&self.popovermenu.get()));

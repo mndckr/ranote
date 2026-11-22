@@ -1,4 +1,5 @@
 // Imports
+use crate::i18n::gettext;
 use crate::{RnAppMenu, RnAppWindow, RnSettingsPanel, RnWorkspaceBrowser};
 use gtk4::{
     Button, CompositeTemplate, Widget, glib, glib::clone, prelude::*, subclass::prelude::*,
@@ -108,6 +109,14 @@ impl RnSidebar {
         imp.appmenu.get().init(appwindow);
         imp.workspacebrowser.get().init(appwindow);
         imp.settings_panel.get().init(appwindow);
+
+        let close_label = gettext("Close Sidebar");
+        imp.left_close_button
+            .get()
+            .update_property(&[gtk4::accessible::Property::Label(&close_label)]);
+        imp.right_close_button
+            .get()
+            .update_property(&[gtk4::accessible::Property::Label(&close_label)]);
 
         imp.left_close_button.connect_clicked(clone!(
             #[weak]

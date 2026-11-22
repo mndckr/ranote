@@ -1,5 +1,6 @@
 // Imports
 use crate::RnAppWindow;
+use crate::i18n::gettext;
 use gtk4::{
     Box, Button, CompositeTemplate, EventControllerLegacy, TemplateChild, ToggleButton, Widget,
     glib::{self, clone},
@@ -112,6 +113,32 @@ impl RnPenPicker {
 
     pub(crate) fn init(&self, appwindow: &RnAppWindow) {
         let imp = self.imp();
+
+        // Icon-only controls need an accessible name for screen readers.
+        imp.brush_toggle
+            .get()
+            .update_property(&[gtk4::accessible::Property::Label(&gettext("Brush"))]);
+        imp.shaper_toggle
+            .get()
+            .update_property(&[gtk4::accessible::Property::Label(&gettext("Shaper"))]);
+        imp.typewriter_toggle
+            .get()
+            .update_property(&[gtk4::accessible::Property::Label(&gettext("Typewriter"))]);
+        imp.eraser_toggle
+            .get()
+            .update_property(&[gtk4::accessible::Property::Label(&gettext("Eraser"))]);
+        imp.selector_toggle
+            .get()
+            .update_property(&[gtk4::accessible::Property::Label(&gettext("Selector"))]);
+        imp.tools_toggle
+            .get()
+            .update_property(&[gtk4::accessible::Property::Label(&gettext("Tools"))]);
+        imp.undo_button
+            .get()
+            .update_property(&[gtk4::accessible::Property::Label(&gettext("Undo"))]);
+        imp.redo_button
+            .get()
+            .update_property(&[gtk4::accessible::Property::Label(&gettext("Redo"))]);
 
         // controller to switch pen mode when hovering with a pen/eraser over the toolbox toolbar
         let pointer_controller_toolbox = EventControllerLegacy::builder()
