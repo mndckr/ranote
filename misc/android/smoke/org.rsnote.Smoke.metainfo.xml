@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  AppStream metadata for the throwaway smoke app. Pixiewood reads the id,
+  name and releases from here (versionCode from sem121010).
+-->
+<component type="desktop-application" xmlns="https://specifications.freedesktop.org/metainfo/1.0">
+  <id>org.rsnote.Smoke</id>
+  <name>rsnote Android smoke</name>
+  <summary>GTK and libadwaita toolchain smoke test</summary>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>GPL-3.0-or-later</project_license>
+  <developer id="org.rsnote">
+    <name>The rsnote Authors</name>
+  </developer>
+  <launchable type="desktop-id">org.rsnote.Smoke.desktop</launchable>
+  <url type="homepage">https://github.com/mndckr/rsnote</url>
+  <content_rating type="oars-1.1"/>
+  <description>
+    <p>
+      A throwaway application that proves the pinned GTK and libadwaita
+      versions cross-compile, package and launch on Android. It is not rnote.
+    </p>
+  </description>
+  <releases>
+    <release version="0.1.0" date="2026-11-22">
+      <description>
+        <p>Initial toolchain check.</p>
+      </description>
+    </release>
+  </releases>
+</component>
