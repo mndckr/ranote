@@ -37,6 +37,29 @@ use std::time::Duration;
 use tracing::{debug, error, warn};
 use uuid::Uuid;
 
+/// Load an image resource as a texture. Android has no SVG pixbuf loader
+/// (gdk-pixbuf dropped it), so SVG resources go through the engine's resvg path.
+fn texture_from_resource(path: &str) -> gdk::Texture {
+    #[cfg(target_os = "android")]
+    {
+        let bytes = gio::resources_lookup_data(path, gio::ResourceLookupFlags::NONE)
+            .expect("image resource must exist");
+        let svg_data = std::str::from_utf8(&bytes).expect("svg resource must be UTF-8");
+        let (data, width, height) = rnote_engine::svg::render_svg_data_to_rgba(svg_data)
+            .expect("svg resource must render");
+        return gdk::MemoryTexture::new(
+            width as i32,
+            height as i32,
+            gdk::MemoryFormat::R8g8b8a8Premultiplied,
+            &glib::Bytes::from_owned(data),
+            (width * 4) as usize,
+        )
+        .upcast();
+    }
+    #[cfg(not(target_os = "android"))]
+    gdk::Texture::from_resource(path)
+}
+
 #[derive(Debug, Default)]
 struct Connections {
     hadjustment: Option<glib::SignalHandlerId>,
@@ -127,7 +150,7 @@ mod imp {
 
             let regular_cursor_icon_name = String::from("cursor-dot-medium");
             let regular_cursor = gdk::Cursor::from_texture(
-                &gdk::Texture::from_resource(
+                &texture_from_resource(
                     (String::from(config::APP_IDPATH)
                         + "icons/scalable/actions/cursor-dot-medium.svg")
                         .as_str(),
@@ -138,7 +161,7 @@ mod imp {
             );
             let drawing_cursor_icon_name = String::from("cursor-dot-small");
             let drawing_cursor = gdk::Cursor::from_texture(
-                &gdk::Texture::from_resource(
+                &texture_from_resource(
                     (String::from(config::APP_IDPATH)
                         + "icons/scalable/actions/cursor-dot-small.svg")
                         .as_str(),
@@ -149,7 +172,7 @@ mod imp {
             );
 
             let invisible_cursor = gdk::Cursor::from_texture(
-                &gdk::Texture::from_resource(
+                &texture_from_resource(
                     (String::from(config::APP_IDPATH)
                         + "icons/scalable/actions/cursor-invisible.svg")
                         .as_str(),
@@ -422,7 +445,7 @@ mod imp {
                     self.regular_cursor_icon_name.replace(icon_name);
 
                     let cursor = gdk::Cursor::from_texture(
-                        &gdk::Texture::from_resource(
+                        &texture_from_resource(
                             (String::from(config::APP_IDPATH)
                                 + &format!(
                                     "icons/scalable/actions/{}.svg",
@@ -444,7 +467,7 @@ mod imp {
                     self.drawing_cursor_icon_name.replace(icon_name);
 
                     let cursor = gdk::Cursor::from_texture(
-                        &gdk::Texture::from_resource(
+                        &texture_from_resource(
                             (String::from(config::APP_IDPATH)
                                 + &format!(
                                     "icons/scalable/actions/{}.svg",

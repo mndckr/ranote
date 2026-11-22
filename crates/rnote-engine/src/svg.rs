@@ -294,6 +294,24 @@ impl Svg {
     }
 }
 
+/// Rasterize a standalone SVG document at its intrinsic size to premultiplied
+/// RGBA8. Used on Android, where GDK has no SVG pixbuf loader (gdk-pixbuf
+/// dropped it in favour of glycin).
+#[cfg(target_os = "android")]
+pub fn render_svg_data_to_rgba(svg_data: &str) -> anyhow::Result<(Vec<u8>, u32, u32)> {
+    let tree = usvg::Tree::from_str(
+        svg_data,
+        &usvg::Options {
+            fontdb: Arc::clone(&USVG_FONTDB),
+            ..Default::default()
+        },
+    )?;
+    let width = tree.size().width().ceil().max(1.0) as u32;
+    let height = tree.size().height().ceil().max(1.0) as u32;
+    let pixmap = render_svg_to_pixmap(svg_data, width, height, 1.0)?;
+    Ok((pixmap.data().to_vec(), width, height))
+}
+
 #[cfg(target_os = "android")]
 fn render_svg_to_pixmap(
     svg_data: &str,
