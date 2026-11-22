@@ -55,6 +55,17 @@ case "$ANDROID_TARGET" in
 esac
 ACTIVITY=org.gtk.android.ToplevelActivity
 
+# Gradle needs a JDK with javac; some distros point `java` at a JRE.
+if [ -z "${JAVA_HOME:-}" ]; then
+  for dir in /usr/lib64/jvm/java-"$JDK_VERSION"-openjdk* /usr/lib/jvm/java-"$JDK_VERSION"-openjdk*; do
+    [ -x "$dir/bin/javac" ] && JAVA_HOME=$dir && break
+  done
+  if [ -z "${JAVA_HOME:-}" ] && command -v javac >/dev/null 2>&1; then
+    JAVA_HOME=$(dirname "$(dirname "$(readlink -f "$(command -v javac)")")")
+  fi
+  [ -n "${JAVA_HOME:-}" ] && export JAVA_HOME
+fi
+
 # Pixiewood and the pinned meson venv shadow system copies.
 PATH=$CACHE_DIR/venv/bin:$PIXIEWOOD_DIR:$ANDROID_HOME/platform-tools:$PATH
 export PATH
