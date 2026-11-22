@@ -42,12 +42,11 @@ GTK 4.22.5 is the newest 4.22.x. libadwaita 1.10 requires GTK >= 4.23.1, so
 
 Linux x86_64. The build needs the pixiewood host tools plus a JDK:
 
-- openSUSE Tumbleweed: `perl(Glib) perl(Glib::Object::Introspection) perl(IPC::Run) perl(JSON) perl(Set::Scalar) perl(XML::LibXML) perl(XML::LibXSLT) typelib(AppStream) java-21-openjdk-devel gcc gcc-c++ glib2-devel glib2-tools libxml2-tools ninja sassc glslc unzip curl git python3`
-- Fedora: `perl-Glib perl-Glib-Object-Introspection perl-IPC-Run perl-JSON perl-Set-Scalar perl-XML-LibXML perl-XML-LibXSLT appstream java-21-openjdk-devel gcc gcc-c++ glib2-devel glib2-tools libxml2-utils ninja-build sassc glslc unzip curl git python3`
-- Debian/Ubuntu: `libglib-perl libglib-object-introspection-perl libipc-run-perl libjson-perl libset-scalar-perl libxml-libxml-perl libxml-libxslt-perl gir1.2-appstream openjdk-21-jdk build-essential libglib2.0-dev-bin libxml2-utils ninja-build sassc glslc unzip curl git python3 python3-venv`
+- openSUSE Tumbleweed: `perl(Glib) perl(Glib::Object::Introspection) perl(IPC::Run) perl(JSON) perl(Set::Scalar) perl(XML::LibXML) perl(XML::LibXSLT) typelib(AppStream) java-21-openjdk-devel gcc gcc-c++ glib2-devel glib2-tools libxml2-tools ninja sassc glslc unzip curl git python3 just pkg-config gettext`
+- Fedora: `perl-Glib perl-Glib-Object-Introspection perl-IPC-Run perl-JSON perl-Set-Scalar perl-XML-LibXML perl-XML-LibXSLT appstream java-21-openjdk-devel gcc gcc-c++ glib2-devel glib2-tools libxml2-utils ninja-build sassc glslc unzip curl git python3 python3-pip just pkg-config gettext`
+- Debian/Ubuntu: `libglib-perl libglib-object-introspection-perl libipc-run-perl libjson-perl libset-scalar-perl libxml-libxml-perl libxml-libxslt-perl gir1.2-appstream openjdk-21-jdk build-essential libglib2.0-dev-bin libxml2-utils ninja-build sassc glslc unzip curl git python3 python3-venv just pkg-config gettext`
 
-The app build also needs `pkg-config`, `msgfmt` (gettext), `cargo` and `rustup`
-in `PATH`.
+The app build also needs `cargo` and `rustup` in `PATH`.
 
 `scripts/setup.sh` creates its own meson 1.9.2 virtualenv and installs the SDK,
 NDK and pixiewood under `$HOME/Android/Sdk` and
@@ -64,7 +63,7 @@ just android-app-setup        # SDK/NDK/meson/pixiewood + meson configure (downl
 just android-app-build        # cross-compile rnote-ui + Gradle package
 just android-app-install      # adb install -r + launch
 just android-app-logcat       # filtered Gtk/Gdk/GLib/rnote/AndroidRuntime log
-just android-app-device-check # device, GPU, version, memory, frame stats, logcat
+just android-app-device-check # device, GPU, version, frame stats, memory, crashes, logcat
 ```
 
 The toolchain smoke app (ticket #5):
@@ -83,6 +82,12 @@ Artifacts:
 - smoke APK: `misc/android/build/rsnote-smoke.apk`.
 - Raw Gradle output: `misc/android/{app,smoke}/_pixiewood/android/app/build/outputs/apk/debug/`.
 - Device report: `misc/android/build/device-check-<timestamp>.txt`.
+
+`android-app-device-check` records the device model and ABI, Android version,
+GPU, the installed app version plus the built APK's SHA-256 and package
+identity, a `gfxinfo` summary and recent frame rows, `meminfo`, the crash
+buffer, and the filtered logcat. Interact with the app before collecting so the
+frame stats have data.
 
 App identity:
 
@@ -227,7 +232,23 @@ Known device-time gaps, deliberately not solved in ticket #6:
   list). Translations are packaged and the reader works when a locale is
   selected.
 - Stylus pressure, SAF file access, lifecycle/autosave, IME, and the rest of the
-  spike are later tickets (#7+), not part of this build wiring.
+  spike are later tickets (#8+), not part of this build wiring.
 
-CI for the APK and fuller device-check tooling is ticket #7; this directory
-deliberately adds no workflow.
+## CI
+
+[`.github/workflows/android.yml`](../../.github/workflows/android.yml) builds the
+rnote APK on pushes to `main` and on pull requests, in a `fedora:45` container
+on `ubuntu-24.04`:
+
+1. installs the host prerequisites listed above;
+2. runs `just android-app-setup` and `just android-app-build`;
+3. checks that the APK contains `librnote.so` for both ABIs and uploads it as
+   the `rsnote-android-apk` artifact (30 days).
+
+Build errors fail the job. No emulator or device tests run in CI, so a green job
+does not mean the app runs; use `just android-app-device-check` on hardware.
+The first run compiles GTK/libadwaita for two ABIs and can take over an hour.
+
+To reproduce CI locally from a clean checkout, install the host prerequisites
+and run the two recipes above; they are the same commands the workflow uses.
+`bash -n misc/android/scripts/*.sh` checks the tooling without an SDK.
