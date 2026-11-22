@@ -40,6 +40,7 @@ impl Capabilities {
     /// Android: no print backend and no audio backend for pen sounds. GTK's
     /// Android file dialog maps the folder picker to ACTION_OPEN_DOCUMENT_TREE,
     /// so workspace folders are chosen through SAF.
+    #[cfg_attr(not(any(target_os = "android", test)), allow(dead_code))]
     pub(crate) const ANDROID: Self = Self {
         can_print: false,
         supports_folder_picker: true,
@@ -160,36 +161,19 @@ pub(crate) fn follow_system_color_scheme(
 
 /// Disable an action whose feature the platform cannot back, so a broken dialog
 /// is never reachable from the menu or an accelerator.
-pub(crate) fn apply_capabilities(caps: Capabilities, feature: Feature, action: &gio::SimpleAction) {
-    action.set_enabled(caps.supports(feature));
+pub(crate) fn apply_capabilities(
+    caps: Capabilities,
+    feature: Feature,
+    action: &(impl IsA<gio::Action> + 'static),
+) {
+    // GAction has no generic `set_enabled` in gio-rs, but "enabled" is a property.
+    action.set_property("enabled", caps.supports(feature));
 }
 
 /// Open a file or folder through the platform's default handler.
 pub(crate) fn open_external(file: &gio::File) -> anyhow::Result<()> {
     gio::AppInfo::launch_default_for_uri(&file.uri(), None::<&gio::AppLaunchContext>)?;
     Ok(())
-}
-
-fn pending_launch_file() -> &'static Mutex<Option<gio::File>> {
-    static PENDING: OnceLock<Mutex<Option<gio::File>>> = OnceLock::new();
-    PENDING.get_or_init(Default::default)
-}
-
-/// Queue a file delivered by the OS launch intent (Android "Open with").
-/// The Android activity glue calls this before the application is activated.
-#[cfg_attr(not(target_os = "android"), allow(dead_code))]
-pub(crate) fn queue_launch_file(file: gio::File) {
-    if let Ok(mut pending) = pending_launch_file().lock() {
-        *pending = Some(file);
-    }
-}
-
-/// Take the queued launch file exactly once, so it is opened through the normal path.
-pub(crate) fn take_launch_file() -> Option<gio::File> {
-    pending_launch_file()
-        .lock()
-        .ok()
-        .and_then(|mut pending| pending.take())
 }
 
 type LifecycleHandler = Box<dyn Fn() + Send + Sync>;
@@ -335,6 +319,17 @@ mod tests {
     }
 
     #[test]
+    fn pen_sounds_action_is_disabled_when_unavailable() {
+        let pen_sounds = gio::SimpleAction::new_stateful("pen-sounds", None, &false.to_variant());
+
+        apply_capabilities(Capabilities::ANDROID, Feature::PenSounds, &pen_sounds);
+        assert!(!pen_sounds.is_enabled());
+
+        apply_capabilities(Capabilities::DESKTOP, Feature::PenSounds, &pen_sounds);
+        assert!(pen_sounds.is_enabled());
+    }
+
+    #[test]
     fn android_capabilities_match_the_spike_limits() {
         assert!(!Capabilities::ANDROID.supports(Feature::Print));
         // GTK's Android file dialog maps a folder picker to ACTION_OPEN_DOCUMENT_TREE.
@@ -350,16 +345,6 @@ mod tests {
         // Android's IM context relies on the app to draw the composition; desktop IM
         // modules draw their own, so the canvas must leave desktop behaviour unchanged.
         assert_eq!(app_draws_ime_preedit(), cfg!(target_os = "android"));
-    }
-
-    #[test]
-    fn launch_file_is_handed_over_once() {
-        let file = gio::File::for_uri("content://com.example.provider/note.rnote");
-
-        queue_launch_file(file.clone());
-
-        assert_eq!(take_launch_file().map(|f| f.uri()), Some(file.uri()));
-        assert!(take_launch_file().is_none());
     }
 
     #[test]

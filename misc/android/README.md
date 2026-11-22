@@ -156,6 +156,13 @@ Android runtime copies the assets to the app files dir and points
 - **renderer**: `env::setup_env()` sets `GSK_RENDERER=gl` on Android before GTK
   starts. There is no cairo fallback: if GL cannot initialize, that is a failed
   gate with logs.
+- **Android-only link deps**: `librnote.so` links `liblog` (for
+  `__android_log_write` in `main.rs`) and bionic libc (for
+  `__system_property_get` in `env.rs`) directly from Rust. Both are declared
+  where the Android link is defined: `-llog` in
+  [`scripts/cargo-build.sh`](scripts/cargo-build.sh) and a comment in
+  [`app/meson.build`](app/meson.build). They are intentionally absent from the
+  root desktop `meson.build`, which never links Android code.
 
 ### Emulator
 
@@ -241,7 +248,11 @@ Device-time gaps:
   that rejects `*/*` makes Save As fail; that needs a device check and, if it
   happens, a minimal GTK patch.
 - Content URI grants are not persisted yet. Reopening a document after the
-  process is killed needs `takePersistableUriPermission` (ticket #10).
+  process is killed needs `takePersistableUriPermission`, which has no
+  GTK/GIO API in the pinned version; only raw JNI would reach it. This is a
+  device blocker for cold-start reopen, not a build failure: the app asks for a
+  new grant after process death instead. See
+  [`../../docs/android/saf.md`](../../docs/android/saf.md).
 - Open → edit → save → reopen through a cloud provider cannot be exercised
   without a device.
 
@@ -269,9 +280,8 @@ Both feed the same open path as desktop and as SAF open:
   toplevel and the previous window stays below in the task history. Document
   identity from ticket #2 still reuses a tab if the same file is opened twice
   in one window.
-- `platform::take_launch_file()` still drains a file queued before activation,
-  but GTK 4.22.5 delivers intents through `GApplication::open`, so no extra JNI
-  glue is needed.
+- GTK 4.22.5 delivers intents through `GApplication::open`, so no extra JNI
+  glue and no launch-file queue are needed.
 
 Known limits to check on a device:
 

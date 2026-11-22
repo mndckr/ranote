@@ -192,13 +192,7 @@ pub(crate) async fn dialog_close_tab(appwindow: &RnAppWindow, tab_page: &adw::Ta
         .unwrap_or_else(|| gettext("- invalid file name -"));
     let save_folder_display_name = save_file
         .as_ref()
-        .and_then(|f| {
-            f.parent().map(|p| {
-                p.path()
-                    .map(|path| path.display().to_string())
-                    .unwrap_or_else(|| p.uri().to_string())
-            })
-        })
+        .and_then(crate::utils::folder_display)
         .unwrap_or_else(|| gettext("- invalid save folder name -"));
 
     let row = adw::ActionRow::builder()
@@ -308,13 +302,7 @@ pub(crate) async fn dialog_close_window(appwindow: &RnAppWindow) {
             .unwrap_or_else(|| gettext("- invalid file name -"));
         let save_folder_display_name = save_file
             .as_ref()
-            .and_then(|f| {
-                f.parent().map(|p| {
-                    p.path()
-                        .map(|path| path.display().to_string())
-                        .unwrap_or_else(|| p.uri().to_string())
-                })
-            })
+            .and_then(crate::utils::folder_display)
             .unwrap_or_else(|| gettext("- invalid save folder name -"));
 
         let row = adw::ActionRow::builder()

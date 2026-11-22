@@ -133,6 +133,11 @@ endforeach
 # RuntimeApplication), not as an ELF executable. cargo rustc emits exactly that
 # with -shared; the wrapper script also points pkg-config at the meson-built
 # GTK .pc files. See misc/android/README.md.
+#
+# Android-only link deps are declared in scripts/cargo-build.sh: `-llog` for
+# `__android_log_write` (main.rs) and bionic libc for `__system_property_get`
+# (env.rs). They are not in the root desktop meson.build, which never builds
+# Android code.
 message('Configuring rnote-ui cargo target')
 
 cpu_family = host_machine.cpu_family()

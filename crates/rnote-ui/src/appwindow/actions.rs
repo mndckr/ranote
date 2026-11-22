@@ -190,8 +190,42 @@ impl RnAppWindow {
         self.add_action(&action_touch_drawing);
         let action_focus_mode = gio::PropertyAction::new("focus-mode", self, "focus-mode");
         self.add_action(&action_focus_mode);
-        let action_pen_sounds = gio::PropertyAction::new("pen-sounds", self, "pen-sounds");
+        // A gio::PropertyAction's "enabled" is read-only, so pen-sounds is a
+        // stateful SimpleAction kept in sync with the window property.
+        let action_pen_sounds = gio::SimpleAction::new_stateful(
+            "pen-sounds",
+            None,
+            &self.property::<bool>("pen-sounds").to_variant(),
+        );
         self.add_action(&action_pen_sounds);
+        platform::apply_capabilities(
+            platform::capabilities(),
+            Feature::PenSounds,
+            &action_pen_sounds,
+        );
+        action_pen_sounds.connect_activate(clone!(
+            #[weak(rename_to = appwindow)]
+            self,
+            move |action, _| {
+                let pen_sounds = action
+                    .state()
+                    .and_then(|state| state.get::<bool>())
+                    .unwrap_or(false);
+                action.set_state(&(!pen_sounds).to_variant());
+                appwindow.set_property("pen-sounds", !pen_sounds);
+            }
+        ));
+        self.connect_notify_local(
+            Some("pen-sounds"),
+            clone!(
+                #[weak]
+                action_pen_sounds,
+                move |appwindow, _| {
+                    action_pen_sounds
+                        .set_state(&appwindow.property::<bool>("pen-sounds").to_variant());
+                }
+            ),
+        );
         let action_snap_positions =
             gio::PropertyAction::new("snap-positions", self, "snap-positions");
         self.add_action(&action_snap_positions);
@@ -1090,12 +1124,7 @@ impl RnAppWindow {
                 // GTK's Android backend drops custom formats when claiming the system
                 // clipboard; keep them for paste inside rnote.
                 #[cfg(target_os = "android")]
-                if content
-                    .iter()
-                    .any(|(_, mime_type)| !crate::clipboard::android_remote_supports(mime_type))
-                {
-                    crate::clipboard::store(content.clone());
-                }
+                store_unsupported_formats(&content);
 
                 let gdk_content_provider = gdk::ContentProvider::new_union(content.into_iter().map(|(data, mime_type)| {
                     gdk::ContentProvider::for_bytes(mime_type.as_str(), &glib::Bytes::from_owned(data))
@@ -1131,12 +1160,7 @@ impl RnAppWindow {
                 // GTK's Android backend drops custom formats when claiming the system
                 // clipboard; keep them for paste inside rnote.
                 #[cfg(target_os = "android")]
-                if content
-                    .iter()
-                    .any(|(_, mime_type)| !crate::clipboard::android_remote_supports(mime_type))
-                {
-                    crate::clipboard::store(content.clone());
-                }
+                store_unsupported_formats(&content);
 
                 let gdk_content_provider = gdk::ContentProvider::new_union(content.into_iter().map(|(data, mime_type)| {
                     gdk::ContentProvider::for_bytes(mime_type.as_str(), &glib::Bytes::from_owned(data))
@@ -1535,6 +1559,18 @@ impl RnAppWindow {
                 content_formats.mime_types()
             );
         }
+    }
+}
+
+/// GTK's Android backend drops custom formats when claiming the system
+/// clipboard; keep them so paste inside rnote still works.
+#[cfg(target_os = "android")]
+fn store_unsupported_formats(content: &[(Vec<u8>, String)]) {
+    if content
+        .iter()
+        .any(|(_, mime_type)| !crate::clipboard::android_remote_supports(mime_type))
+    {
+        crate::clipboard::store(content.to_vec());
     }
 }
 
