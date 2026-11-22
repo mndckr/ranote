@@ -3950,7 +3950,6 @@ dependencies = [
  "num-traits",
  "numeric-sort",
  "once_cell",
- "open",
  "palette",
  "parry2d-f64",
  "path-absolutize",

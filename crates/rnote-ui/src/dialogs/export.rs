@@ -3,6 +3,7 @@
 // Imports
 use crate::RnStrokeContentPreview;
 use crate::canvas::{self, RnCanvas};
+use crate::platform::{self, Feature};
 use crate::{RnAppWindow, config};
 use adw::prelude::*;
 use gettextrs::gettext;
@@ -324,7 +325,7 @@ pub(crate) async fn dialog_export_doc_w_prefs(appwindow: &RnAppWindow, canvas: &
                             return;
                     };
 
-                    if let Err(e) = open::that_detached(&folder_path_string) {
+                    if let Err(e) = platform::open_external(&gio::File::for_path(&folder_path_string)) {
                         error!("Opening the parent folder '{folder_path_string}' in the file manager failed, Err: {e:?}");
                         appwindow.overlays().dispatch_toast_error(&gettext("Failed to view the file in the file manager"));
                     }
@@ -435,6 +436,7 @@ pub(crate) async fn dialog_export_doc_pages_w_prefs(appwindow: &RnAppWindow, can
     let export_dir_button: Button = builder
         .object("export_doc_pages_export_dir_button")
         .unwrap();
+    export_dir_button.set_visible(platform::feature_available(Feature::FolderPicker));
     let export_files_stemname_entryrow: adw::EntryRow = builder
         .object("export_doc_pages_export_files_stemname_entryrow")
         .unwrap();
@@ -750,7 +752,7 @@ pub(crate) async fn dialog_export_doc_pages_w_prefs(appwindow: &RnAppWindow, can
                         return;
                     };
 
-                    if let Err(e) = open::that_detached(&folder_path_string) {
+                    if let Err(e) = platform::open_external(&gio::File::for_path(&folder_path_string)) {
                         error!("Opening the parent folder '{folder_path_string}' in the file manager failed, Err: {e:?}");
                         appwindow.overlays().dispatch_toast_error(&gettext("Failed to view the file in the file manager"));
                     }
@@ -1116,7 +1118,7 @@ pub(crate) async fn dialog_export_selection_w_prefs(appwindow: &RnAppWindow, can
                             return;
                     };
 
-                    if let Err(e) = open::that_detached(&folder_path_string) {
+                    if let Err(e) = platform::open_external(&gio::File::for_path(&folder_path_string)) {
                         error!("Opening the parent folder '{folder_path_string}' in the file manager failed, Err: {e:?}");
                         appwindow.overlays().dispatch_toast_error(&gettext("Failed to view the file in the file manager"));
                     }
