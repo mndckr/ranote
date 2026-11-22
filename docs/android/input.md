@@ -5,8 +5,9 @@ Real-tablet verification (pressure, tilt, buttons, eraser, palm rejection) is
 deferred to the stylus sign-off ticket (#24). Nothing in this document claims
 those were measured on hardware.
 
-The desktop code paths are unchanged. The only Android-specific branch is the
-stylus-ownership reset described below.
+The desktop code paths are unchanged apart from the touch-count fix described
+below, which only affects touch drawing on touch-screen desktops. The only
+Android-specific branch is the stylus-ownership reset.
 
 ## What GTK 4.22.5's Android backend exposes
 
