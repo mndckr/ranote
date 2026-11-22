@@ -338,7 +338,7 @@ impl RnCanvas {
     ) -> anyhow::Result<()> {
         let export_bytes = self.engine_ref().export_doc(title, export_prefs_override);
 
-        crate::utils::create_replace_file_future(export_bytes.await??, file).await?;
+        crate::utils::write_export_file(export_bytes.await??, file).await?;
 
         self.set_last_export_dir(file.parent());
 
@@ -347,7 +347,7 @@ impl RnCanvas {
 
     /// Exports document pages
     /// `file_stem_name`: the stem name of the created files. This is extended by an enumeration of the page number and
-    /// file extension overwrites existing files with the same name!
+    /// the file extension. Existing files are not overwritten; a duplicate suffix is appended instead.
     pub(crate) async fn export_doc_pages(
         &self,
         appwindow: &RnAppWindow,
@@ -375,15 +375,15 @@ impl RnCanvas {
         let export_bytes = export_bytes_recv.await??;
 
         for (i, page_bytes) in export_bytes.into_iter().enumerate() {
-            crate::utils::create_replace_file_future(
-                page_bytes,
-                &dir.child(
-                    &(rnote_engine::utils::doc_pages_files_names(file_stem_name.clone(), i + 1)
-                        + "."
-                        + &file_ext),
-                ),
-            )
-            .await?;
+            // Exporting pages must not overwrite files that are already there,
+            // including on SAF folder trees.
+            let (page_file, _) = crate::utils::unique_file_in_dir(
+                dir,
+                &rnote_engine::utils::doc_pages_files_names(file_stem_name.clone(), i + 1),
+                &file_ext,
+                0,
+            );
+            crate::utils::write_export_file(page_bytes, &page_file).await?;
         }
 
         self.set_last_export_dir(Some(dir.clone()));
@@ -399,7 +399,7 @@ impl RnCanvas {
         let export_bytes = self.engine_ref().export_selection(export_prefs_override);
 
         if let Some(export_bytes) = export_bytes.await?? {
-            crate::utils::create_replace_file_future(export_bytes, file).await?;
+            crate::utils::write_export_file(export_bytes, file).await?;
         }
 
         self.set_last_export_dir(file.parent());

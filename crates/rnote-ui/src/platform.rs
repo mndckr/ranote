@@ -32,12 +32,12 @@ impl Capabilities {
         supports_folder_picker: true,
         supports_pen_sounds: true,
     };
-    /// Android: no print backend, GTK's folder chooser is not usable there, and
-    /// there is no audio backend for pen sounds. Folder access goes through the
-    /// SAF/file seam instead.
+    /// Android: no print backend and no audio backend for pen sounds. GTK's
+    /// Android file dialog maps the folder picker to ACTION_OPEN_DOCUMENT_TREE,
+    /// so workspace folders are chosen through SAF.
     pub(crate) const ANDROID: Self = Self {
         can_print: false,
-        supports_folder_picker: false,
+        supports_folder_picker: true,
         supports_pen_sounds: false,
     };
 
@@ -63,6 +63,16 @@ pub(crate) fn capabilities() -> Capabilities {
 
 pub(crate) fn feature_available(feature: Feature) -> bool {
     capabilities().supports(feature)
+}
+
+/// Whether the canvas must draw the IME composition (preedit) string itself.
+///
+/// Desktop IM modules (IBus, Wayland text-input, Windows IME) draw the composition in
+/// their own popup, so drawing it again would duplicate it. GTK's Android IM context
+/// does not draw anything: it only emits `preedit-changed`/`commit` and expects the
+/// application to render the composition.
+pub(crate) fn app_draws_ime_preedit() -> bool {
+    cfg!(target_os = "android")
 }
 
 /// Disable an action whose feature the platform cannot back, so a broken dialog
@@ -187,11 +197,19 @@ mod tests {
     #[test]
     fn android_capabilities_match_the_spike_limits() {
         assert!(!Capabilities::ANDROID.supports(Feature::Print));
-        assert!(!Capabilities::ANDROID.supports(Feature::FolderPicker));
+        // GTK's Android file dialog maps a folder picker to ACTION_OPEN_DOCUMENT_TREE.
+        assert!(Capabilities::ANDROID.supports(Feature::FolderPicker));
         assert!(!Capabilities::ANDROID.supports(Feature::PenSounds));
         assert!(Capabilities::DESKTOP.supports(Feature::Print));
         assert!(Capabilities::DESKTOP.supports(Feature::FolderPicker));
         assert!(Capabilities::DESKTOP.supports(Feature::PenSounds));
+    }
+
+    #[test]
+    fn desktop_keeps_drawing_ime_preedit_itself() {
+        // Android's IM context relies on the app to draw the composition; desktop IM
+        // modules draw their own, so the canvas must leave desktop behaviour unchanged.
+        assert_eq!(app_draws_ime_preedit(), cfg!(target_os = "android"));
     }
 
     #[test]

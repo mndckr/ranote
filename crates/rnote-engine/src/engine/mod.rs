@@ -920,4 +920,103 @@ impl Engine {
         self.penholder
             .current_pen_style_w_override(&engine_view!(self))
     }
+
+    /// Set the IME composition (preedit) text, which is drawn at the typewriter cursor but is not part of the document.
+    ///
+    /// Committed text is inserted through [`PenEvent::Text`]. Android's system IME does not draw
+    /// the composition itself, so the canvas has to display it.
+    pub fn set_ime_preedit(&mut self, preedit: Option<String>) -> WidgetFlags {
+        let mut widget_flags = WidgetFlags::default();
+
+        if let Pen::Typewriter(typewriter) = self.penholder.current_pen_mut()
+            && typewriter.set_preedit(preedit)
+        {
+            widget_flags.redraw = true;
+        }
+
+        widget_flags
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::DrawableOnDoc;
+    use crate::pens::{Pen, Typewriter};
+    use crate::strokes::Stroke;
+    use p2d::math::Vector2;
+    use rnote_compose::PenEvent;
+    use std::time::Instant;
+
+    fn only_text_stroke_text(engine: &Engine) -> Option<String> {
+        engine
+            .store
+            .stroke_keys_unordered()
+            .into_iter()
+            .find_map(|key| match engine.store.get_stroke_ref(key) {
+                Some(Stroke::TextStroke(textstroke)) => Some(textstroke.text.clone()),
+                _ => None,
+            })
+    }
+
+    fn typewriter_clone(engine: &mut Engine) -> Typewriter {
+        match engine.penholder.current_pen_ref() {
+            Pen::Typewriter(typewriter) => typewriter.clone(),
+            _ => panic!("typewriter pen expected"),
+        }
+    }
+
+    #[test]
+    fn ime_composition_does_not_modify_the_document() {
+        let mut engine = Engine::default();
+        let _ = engine.insert_text(String::new(), Some(Vector2::new(10.0, 10.0)));
+
+        let widget_flags = engine.set_ime_preedit(Some(String::from("にほん")));
+
+        assert!(widget_flags.redraw);
+        assert_eq!(only_text_stroke_text(&engine).as_deref(), Some(""));
+    }
+
+    #[test]
+    fn ime_commit_inserts_non_latin_text_exactly_once() {
+        let mut engine = Engine::default();
+        let _ = engine.insert_text(String::new(), Some(Vector2::new(10.0, 10.0)));
+        let _ = engine.set_ime_preedit(Some(String::from("にほん")));
+
+        let _ = engine.handle_pen_event(
+            PenEvent::Text {
+                text: String::from("日本語"),
+            },
+            None,
+            Instant::now(),
+        );
+
+        assert_eq!(only_text_stroke_text(&engine).as_deref(), Some("日本語"));
+    }
+
+    #[test]
+    fn ime_preedit_lays_out_and_draws() {
+        let mut engine = Engine::default();
+        let _ = engine.insert_text(String::from("abc"), Some(Vector2::new(10.0, 10.0)));
+
+        let mut typewriter = typewriter_clone(&mut engine);
+        assert!(
+            typewriter
+                .preedit_bounds_on_doc(&engine_view!(engine))
+                .is_none()
+        );
+
+        assert!(typewriter.set_preedit(Some(String::from("にほん"))));
+        let preedit_bounds = typewriter
+            .preedit_bounds_on_doc(&engine_view!(engine))
+            .unwrap();
+        assert!(preedit_bounds.maxs.x > preedit_bounds.mins.x);
+        assert!(preedit_bounds.maxs.y > preedit_bounds.mins.y);
+
+        let surface = cairo::ImageSurface::create(cairo::Format::ARgb32, 300, 300).unwrap();
+        let cx = cairo::Context::new(&surface).unwrap();
+        typewriter
+            .draw_on_doc_to_cairo(&cx, &engine_view!(engine))
+            .unwrap();
+    }
 }

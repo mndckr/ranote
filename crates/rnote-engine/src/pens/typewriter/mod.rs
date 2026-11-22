@@ -17,7 +17,7 @@ use p2d::math::Vector2;
 use piet::RenderContext;
 use rnote_compose::EventResult;
 use rnote_compose::color;
-use rnote_compose::ext::{AabbExt, Vector2Ext};
+use rnote_compose::ext::{AabbExt, DAffine2Ext, Vector2Ext};
 use rnote_compose::penevent::{PenEvent, PenProgress, PenState};
 use rnote_compose::shapes::Shapeable;
 use rnote_compose::style::indicators;
@@ -80,6 +80,8 @@ pub struct Typewriter {
     pos: Option<Vector2>,
     blink_task_handle: Option<crate::tasks::PeriodicTaskHandle>,
     cursor_visible: bool,
+    /// The IME composition string, drawn at the cursor but not part of the document.
+    preedit: Option<String>,
 }
 
 impl Default for Typewriter {
@@ -89,6 +91,7 @@ impl Default for Typewriter {
             pos: None,
             blink_task_handle: None,
             cursor_visible: true,
+            preedit: None,
         }
     }
 }
@@ -97,7 +100,7 @@ impl DrawableOnDoc for Typewriter {
     fn bounds_on_doc(&self, engine_view: &EngineView) -> Option<Aabb> {
         let total_zoom = engine_view.camera.total_zoom();
 
-        match &self.state {
+        let state_bounds = match &self.state {
             TypewriterState::Idle => None,
             TypewriterState::Start(pos) => Some(Aabb::new(
                 *pos,
@@ -133,7 +136,13 @@ impl DrawableOnDoc for Typewriter {
                     None
                 }
             }
-        }
+        };
+
+        // The composition is drawn outside the stored text, so make sure its bounds are not clipped.
+        state_bounds.map(|bounds| match self.preedit_bounds_on_doc(engine_view) {
+            Some(preedit_bounds) => bounds.merged(&preedit_bounds),
+            None => bounds,
+        })
     }
 
     fn draw_on_doc(
@@ -292,6 +301,8 @@ impl DrawableOnDoc for Typewriter {
             }
         }
 
+        self.draw_preedit(cx, engine_view)?;
+
         cx.restore().map_err(|e| anyhow::anyhow!("{e:?}"))?;
         Ok(())
     }
@@ -313,6 +324,7 @@ impl PenBehaviour for Typewriter {
 
     fn deinit(&mut self) -> WidgetFlags {
         self.blink_task_handle = None;
+        self.preedit = None;
         WidgetFlags::default()
     }
 
@@ -603,6 +615,120 @@ impl Typewriter {
 
     pub(crate) fn toggle_cursor_visibility(&mut self) {
         self.cursor_visible = !self.cursor_visible;
+    }
+
+    /// Set the IME composition string, which is drawn at the cursor but is not part of the document.
+    ///
+    /// Returns true when the preedit changed.
+    pub(crate) fn set_preedit(&mut self, preedit: Option<String>) -> bool {
+        let preedit = preedit.filter(|preedit| !preedit.is_empty());
+        if self.preedit == preedit {
+            return false;
+        }
+        self.preedit = preedit;
+        true
+    }
+
+    fn preedit_str(&self) -> Option<&str> {
+        self.preedit
+            .as_deref()
+            .filter(|preedit| !preedit.is_empty())
+    }
+
+    /// How to draw the preedit: the text affine, the preedit origin in local coordinates and the base style.
+    fn preedit_placement(
+        &self,
+        engine_view: &EngineView,
+    ) -> Option<(DAffine2, Vector2, TextStyle)> {
+        self.preedit_str()?;
+
+        match &self.state {
+            TypewriterState::Idle => None,
+            TypewriterState::Start(pos) => Some((
+                DAffine2::from_translation(*pos),
+                Vector2::ZERO,
+                engine_view
+                    .config
+                    .pens_config
+                    .typewriter_config
+                    .text_style
+                    .clone(),
+            )),
+            TypewriterState::Modifying {
+                stroke_key, cursor, ..
+            } => {
+                let Some(Stroke::TextStroke(textstroke)) =
+                    engine_view.store.get_stroke_ref(*stroke_key)
+                else {
+                    return None;
+                };
+
+                let mut piet_text = piet_cairo::CairoText::new();
+                let hit_pos = textstroke
+                    .text_style
+                    .cursor_hittest_position(&mut piet_text, textstroke.text.clone(), cursor)
+                    .ok()?;
+                let line_metric = textstroke
+                    .text_style
+                    .cursor_line_metric(
+                        &mut piet_text,
+                        textstroke.text.clone(),
+                        cursor.cur_cursor(),
+                    )
+                    .ok()?;
+
+                Some((
+                    textstroke.affine,
+                    Vector2::new(hit_pos.point.x, line_metric.y_offset),
+                    textstroke.text_style.clone(),
+                ))
+            }
+        }
+    }
+
+    /// The preedit style: underlined, like the IME would draw the composition.
+    fn preedit_style(&self, base: &TextStyle, preedit: &str) -> TextStyle {
+        let mut style = base.clone();
+        style.set_max_width(None);
+        style.ranged_text_attributes = vec![RangedTextAttribute {
+            range: 0..preedit.len(),
+            attribute: TextAttribute::Underline(true),
+        }];
+        style
+    }
+
+    pub(crate) fn preedit_bounds_on_doc(&self, engine_view: &EngineView) -> Option<Aabb> {
+        let preedit = self.preedit_str()?;
+        let (affine, origin, base_style) = self.preedit_placement(engine_view)?;
+        let style = self.preedit_style(&base_style, preedit);
+        let size = style
+            .untransformed_size(&mut piet_cairo::CairoText::new(), preedit.to_string())
+            .ok()?;
+        let origin = affine.transform_point2(origin);
+
+        Some(Aabb::new(origin, origin + size))
+    }
+
+    fn draw_preedit(
+        &self,
+        cx: &mut piet_cairo::CairoRenderContext,
+        engine_view: &EngineView,
+    ) -> anyhow::Result<()> {
+        let Some(preedit) = self.preedit_str() else {
+            return Ok(());
+        };
+        let Some((affine, origin, base_style)) = self.preedit_placement(engine_view) else {
+            return Ok(());
+        };
+        let style = self.preedit_style(&base_style, preedit);
+        let layout = style.build_text_layout(cx.text(), preedit.to_string())?;
+
+        cx.save().map_err(|e| anyhow::anyhow!("{e:?}"))?;
+        cx.transform(affine.to_kurbo());
+        cx.draw_text(&layout, origin.to_kurbo_point());
+        cx.restore().map_err(|e| anyhow::anyhow!("{e:?}"))?;
+
+        Ok(())
     }
 
     /// Whether the typewriter handles text input.
