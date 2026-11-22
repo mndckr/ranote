@@ -30,6 +30,7 @@ use rnote_engine::ext::GraphenePointExt;
 use rnote_engine::ext::GrapheneRectExt;
 use rnote_engine::{Engine, WidgetFlags};
 use std::cell::{Cell, Ref, RefCell, RefMut};
+use std::collections::HashSet;
 use std::path::Path;
 use std::time::Duration;
 use tracing::{debug, error, warn};
@@ -93,6 +94,7 @@ mod imp {
         pub(crate) unsaved_changes: Cell<bool>,
         pub(crate) empty: Cell<bool>,
         pub(crate) touch_drawing: Cell<bool>,
+        pub(crate) active_touches: RefCell<HashSet<gdk::EventSequence>>,
         pub(crate) show_drawing_cursor: Cell<bool>,
         pub(crate) text_input_enabled: Cell<bool>,
 
@@ -193,6 +195,7 @@ mod imp {
                 unsaved_changes: Cell::new(false),
                 empty: Cell::new(true),
                 touch_drawing: Cell::new(false),
+                active_touches: RefCell::new(HashSet::new()),
                 show_drawing_cursor: Cell::new(false),
                 text_input_enabled: Cell::new(false),
 
@@ -844,6 +847,30 @@ impl RnCanvas {
         if self.imp().touch_drawing.get() != touch_drawing {
             self.set_property("touch-drawing", touch_drawing.to_value());
         }
+    }
+
+    /// Updates the active touch sequences and returns how many fingers are down.
+    ///
+    /// `GdkDevice::num-touches` is the maximum number of concurrent touches, not
+    /// the current count, and is 0 on Android, so touch sequences are tracked here.
+    pub(crate) fn track_touch_event(&self, event: &gdk::Event) -> u32 {
+        let mut active_touches = self.imp().active_touches.borrow_mut();
+
+        match event.event_type() {
+            gdk::EventType::TouchBegin => {
+                active_touches.insert(event.event_sequence());
+            }
+            gdk::EventType::TouchEnd | gdk::EventType::TouchCancel => {
+                active_touches.remove(&event.event_sequence());
+            }
+            _ => {}
+        }
+
+        active_touches.len() as u32
+    }
+
+    pub(crate) fn active_touches(&self) -> u32 {
+        self.imp().active_touches.borrow().len() as u32
     }
 
     #[allow(unused)]
