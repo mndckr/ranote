@@ -18,7 +18,7 @@ pub(crate) fn create_folder(
         #[weak]
         appwindow,
         move |_, _| {
-            if let Some(parent_path) = workspacebrowser.dir_list_file().and_then(|f| f.path()) {
+            if let Some(parent_file) = workspacebrowser.dir_list_file() {
                 let folder_name_entry = create_folder_name_entry();
                 let dialog_title_label = create_dialog_title_label();
                 let (apply_button, popover) =
@@ -33,12 +33,14 @@ pub(crate) fn create_folder(
                     #[weak]
                     apply_button,
                     #[strong]
-                    parent_path,
+                    parent_file,
                     move |entry| {
                         let entry_text = entry.text();
-                        let new_folder_path = parent_path.join(&entry_text);
+                        let new_folder_file = parent_file.child(&entry_text);
 
-                        if new_folder_path.exists() || entry_text.is_empty() {
+                        if new_folder_file.query_exists(gio::Cancellable::NONE)
+                            || entry_text.is_empty()
+                        {
                             apply_button.set_sensitive(false);
                             entry.add_css_class("error");
                         } else {
@@ -56,10 +58,12 @@ pub(crate) fn create_folder(
                     folder_name_entry,
                     #[weak]
                     appwindow,
+                    #[strong]
+                    parent_file,
                     move |_| {
-                        let new_folder_path = parent_path.join(folder_name_entry.text().as_str());
+                        let new_folder_file = parent_file.child(folder_name_entry.text().as_str());
 
-                        if new_folder_path.exists() {
+                        if new_folder_file.query_exists(gio::Cancellable::NONE) {
                             // Should have been caught earlier, but making sure
                             appwindow
                                 .overlays()
@@ -69,14 +73,25 @@ pub(crate) fn create_folder(
                                 folder_name_entry.text().as_str()
                             );
                         } else {
-                            if let Err(e) = fs_extra::dir::create(new_folder_path, false) {
-                                appwindow
-                                    .overlays()
-                                    .dispatch_toast_error("Creating new folder failed");
-                                debug!("Couldn't create folder, Err: {e:?}");
-                            }
-
-                            popover.popdown();
+                            glib::spawn_future_local(clone!(
+                                #[weak]
+                                popover,
+                                #[weak]
+                                appwindow,
+                                async move {
+                                    if let Err(e) = new_folder_file
+                                        .make_directory_future(glib::Priority::DEFAULT)
+                                        .await
+                                    {
+                                        appwindow
+                                            .overlays()
+                                            .dispatch_toast_error("Creating new folder failed");
+                                        debug!("Couldn't create folder, Err: {e:?}");
+                                    } else {
+                                        popover.popdown();
+                                    }
+                                }
+                            ));
                         }
                     }
                 ));

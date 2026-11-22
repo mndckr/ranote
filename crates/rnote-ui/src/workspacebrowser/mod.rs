@@ -18,7 +18,6 @@ use gtk4::{
     SortListModel, SorterChange, Widget, gdk, gio, glib, glib::clone, glib::closure, prelude::*,
     subclass::prelude::*,
 };
-use std::path::PathBuf;
 use tracing::warn;
 
 mod imp {
@@ -176,19 +175,13 @@ impl RnWorkspaceBrowser {
         self.imp().dir_list.set_file(file);
     }
 
-    pub(crate) fn dir_list_dir(&self) -> Option<PathBuf> {
-        self.imp().dir_list.file().and_then(|f| f.path())
-    }
-
     pub(crate) fn refresh_dir_list_selected_workspace(&self) {
         if let Some(current_workspace_dir) = self
             .workspacesbar()
             .selected_workspacelistentry()
-            .map(|e| PathBuf::from(e.dir()))
+            .map(|e| e.dir_file())
         {
-            self.imp()
-                .dir_list
-                .set_file(Some(&gio::File::for_path(current_workspace_dir)));
+            self.imp().dir_list.set_file(Some(&current_workspace_dir));
         }
     }
 
@@ -203,22 +196,25 @@ impl RnWorkspaceBrowser {
 
     fn setup_dir_controls(&self, _appwindow: &RnAppWindow) {
         self.imp().dir_controls_dir_up_button.connect_clicked(clone!(#[weak(rename_to=workspacebrowser)] self , move |_| {
-            if let Some(mut dir) = workspacebrowser.workspacesbar().selected_workspacelistentry().map(|e| PathBuf::from(e.dir())) {
-                // don't canonicalize on windows, because that would convert the path to one with extended length syntax
-                if !cfg!(target_os = "windows") {
-                    dir = match dir.canonicalize() {
-                        Ok(dir) => dir,
-                        Err(e) => {
-                            warn!("Could not canonicalize dir {dir:?} from workspacelistentry, Err: {e:?}");
-                            return;
-                        }
-                    };
-                }
-                if let Some(parent) = dir.parent().map(|p| p.to_path_buf()) {
-                    workspacebrowser.workspacesbar().set_selected_workspace_dir(parent);
-                } else {
-                    warn!("Can't move directory up from dir {dir:?} from workspacelistentry, has no parent.");
-                }
+            let Some(mut dir) = workspacebrowser.workspacesbar().selected_workspacelistentry().map(|e| e.dir_file()) else {
+                return;
+            };
+            // don't canonicalize on windows, because that would convert the path to one with extended length syntax
+            if let Some(path) = dir.path()
+                && !cfg!(target_os = "windows")
+            {
+                dir = match path.canonicalize() {
+                    Ok(dir) => gio::File::for_path(dir),
+                    Err(e) => {
+                        warn!("Could not canonicalize dir {path:?} from workspacelistentry, Err: {e:?}");
+                        return;
+                    }
+                };
+            }
+            if let Some(parent) = dir.parent() {
+                workspacebrowser.workspacesbar().set_selected_workspace_file(parent);
+            } else {
+                warn!("Can't move directory up from dir {dir:?} from workspacelistentry, has no parent.");
             }
         }));
     }

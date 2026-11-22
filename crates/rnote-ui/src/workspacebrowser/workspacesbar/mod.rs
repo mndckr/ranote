@@ -16,7 +16,6 @@ use gtk4::{
     Button, CompositeTemplate, ListBox, ScrolledWindow, Widget, gdk, gio, glib, glib::clone,
     prelude::*, subclass::prelude::*,
 };
-use std::path::PathBuf;
 use tracing::{error, warn};
 
 mod imp {
@@ -207,10 +206,10 @@ impl RnWorkspacesBar {
     }
 
     #[allow(unused)]
-    pub(crate) fn set_selected_workspace_dir(&self, dir: PathBuf) {
+    pub(crate) fn set_selected_workspace_file(&self, dir: gio::File) {
         if let Some(i) = self.selected_workspace_index() {
             let entry = self.imp().workspace_list.remove(i as usize);
-            entry.set_dir(dir.to_string_lossy().into());
+            entry.set_dir(crate::utils::file_dir_identity(&dir));
             self.imp().workspace_list.insert(i as usize, entry);
 
             self.select_workspace_by_index(i);
@@ -329,7 +328,7 @@ impl RnWorkspacesBar {
                     appwindow
                         .sidebar()
                         .workspacebrowser()
-                        .set_dir_list_file(Some(&gio::File::for_path(dir)));
+                        .set_dir_list_file(Some(&entry.dir_file()));
                 }
             }
         ));
