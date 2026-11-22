@@ -1,5 +1,6 @@
 // Imports
 use gtk4::{gio, prelude::*};
+use std::path::Path;
 use tracing::warn;
 
 /// File types supported by Rnote.
@@ -61,8 +62,8 @@ impl FileType {
         }
 
         // match on file extensions as fallback
-        if let Some(path) = file.path() {
-            if let Some(extension_str) = path.extension() {
+        if let Some(basename) = file.basename() {
+            if let Some(extension_str) = Path::new(&basename).extension() {
                 match &*extension_str.to_string_lossy() {
                     "rnote" => {
                         return Self::RnoteFile;
@@ -86,7 +87,7 @@ impl FileType {
                 }
             }
         } else {
-            warn!("Looking up file type failed, no path for file `{file:?}`.");
+            warn!("Looking up file type failed, no basename for file `{file:?}`.");
         };
 
         Self::Unsupported

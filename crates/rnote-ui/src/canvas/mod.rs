@@ -1055,7 +1055,11 @@ impl RnCanvas {
         self.output_file()
             .map(|f| {
                 f.parent()
-                    .and_then(|p| Some(p.path()?.display().to_string()))
+                    .map(|p| {
+                        p.path()
+                            .map(|p| p.display().to_string())
+                            .unwrap_or_else(|| p.uri().to_string())
+                    })
                     .unwrap_or_else(|| gettext("- invalid folder path -"))
             })
             .unwrap_or_else(|| OUTPUT_FILE_NEW_SUBTITLE.to_string())
