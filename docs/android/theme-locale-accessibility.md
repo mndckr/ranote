@@ -91,7 +91,7 @@ Android backend when the system theme changes.
    autosave interval.
 2. `adb shell am force-stop com.github.flxzt.rnote`
 3. Relaunch. The setting is still in effect.
-4. Optional: `adb shell run-as com.github.flxzt.rnote ls files/etc/glib-2.0/settings`
+4. Optional: `adb shell ls /sdcard/Android/data/com.github.flxzt.rnote/files/etc/glib-2.0/settings`
    and confirm `keyfile` exists after the change.
 
 ### TalkBack
