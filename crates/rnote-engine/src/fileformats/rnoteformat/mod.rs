@@ -172,3 +172,37 @@ impl FileFormatSaver for RnoteFile {
         Ok(compressed)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::engine::{Engine, EngineSnapshot};
+    use crate::strokes::Stroke;
+    use p2d::math::Vector2;
+
+    #[test]
+    fn non_latin_text_strokes_survive_save_and_load() {
+        let text = String::from("日本語 中文 한국어 العربية 👨‍👩‍👧‍👦");
+
+        let mut engine = Engine::default();
+        let _ = engine.insert_text(text.clone(), Some(Vector2::new(10.0, 10.0)));
+        let file = RnoteFile {
+            engine_snapshot: ijson::to_value(engine.take_snapshot()).unwrap(),
+        };
+
+        let bytes = file.save_as_bytes("test.rnote").unwrap();
+        let loaded = RnoteFile::load_from_bytes(&bytes).unwrap();
+        let snapshot: EngineSnapshot = ijson::from_value(&loaded.engine_snapshot).unwrap();
+
+        let texts = snapshot
+            .stroke_components
+            .values()
+            .filter_map(|stroke| match stroke.as_ref() {
+                Stroke::TextStroke(textstroke) => Some(textstroke.text.as_str()),
+                _ => None,
+            })
+            .collect::<Vec<&str>>();
+
+        assert_eq!(texts, vec![text.as_str()]);
+    }
+}
