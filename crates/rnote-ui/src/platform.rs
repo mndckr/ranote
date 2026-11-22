@@ -37,12 +37,12 @@ impl Capabilities {
         supports_folder_picker: true,
         supports_pen_sounds: true,
     };
-    /// Android: no print backend, GTK's folder chooser is not usable there, and
-    /// there is no audio backend for pen sounds. Folder access goes through the
-    /// SAF/file seam instead.
+    /// Android: no print backend and no audio backend for pen sounds. GTK's
+    /// Android file dialog maps the folder picker to ACTION_OPEN_DOCUMENT_TREE,
+    /// so workspace folders are chosen through SAF.
     pub(crate) const ANDROID: Self = Self {
         can_print: false,
-        supports_folder_picker: false,
+        supports_folder_picker: true,
         supports_pen_sounds: false,
     };
 
@@ -259,7 +259,8 @@ mod tests {
     #[test]
     fn android_capabilities_match_the_spike_limits() {
         assert!(!Capabilities::ANDROID.supports(Feature::Print));
-        assert!(!Capabilities::ANDROID.supports(Feature::FolderPicker));
+        // GTK's Android file dialog maps a folder picker to ACTION_OPEN_DOCUMENT_TREE.
+        assert!(Capabilities::ANDROID.supports(Feature::FolderPicker));
         assert!(!Capabilities::ANDROID.supports(Feature::PenSounds));
         assert!(Capabilities::DESKTOP.supports(Feature::Print));
         assert!(Capabilities::DESKTOP.supports(Feature::FolderPicker));

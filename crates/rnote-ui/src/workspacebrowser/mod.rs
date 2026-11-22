@@ -55,7 +55,7 @@ mod imp {
     impl Default for RnWorkspaceBrowser {
         fn default() -> Self {
             let dir_list = DirectoryList::new(Some("standard::*"), None as Option<&gio::File>);
-            dir_list.set_monitored(true);
+            dir_list.set_monitored(false);
 
             Self {
                 action_group: gio::SimpleActionGroup::new(),
@@ -172,6 +172,10 @@ impl RnWorkspaceBrowser {
     }
 
     pub(crate) fn set_dir_list_file(&self, file: Option<&gio::File>) {
+        // SAF tree URIs can be enumerated but not watched.
+        self.imp()
+            .dir_list
+            .set_monitored(file.is_some_and(|f| f.is_native()));
         self.imp().dir_list.set_file(file);
     }
 

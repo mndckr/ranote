@@ -53,6 +53,13 @@ mod imp {
             let obj = self.obj();
             self.parent_startup();
 
+            // Tuning: UI transition animations compete with touch drawing for
+            // frames on Android tablets; the spike only needs direct manipulation.
+            #[cfg(target_os = "android")]
+            if let Some(settings) = gtk4::Settings::default() {
+                settings.set_gtk_enable_animations(false);
+            }
+
             self.setup_buildables();
             obj.setup_actions();
             obj.setup_action_accels();

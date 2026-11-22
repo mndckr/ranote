@@ -64,7 +64,14 @@ just android-app-build        # cross-compile rnote-ui + Gradle package
 just android-app-install      # adb install -r + launch
 just android-app-logcat       # filtered Gtk/Gdk/GLib/rnote/AndroidRuntime log
 just android-app-device-check # device, GPU, version, frame stats, memory, crashes, logcat
+just android-app-perf-on      # opt into the debug-only perf instrumentation (#12)
+just android-app-perf-off     # opt out again
 ```
+
+The perf instrumentation is off by default, debug-only, and logs frame timings,
+touch input-to-snapshot latency and RSS without ever touching note contents. See
+[`docs/android/performance.md`](../../docs/android/performance.md) for what it
+records and the 20-page device procedure.
 
 The toolchain smoke app (ticket #5):
 
@@ -237,6 +244,51 @@ Device-time gaps:
 - Open → edit → save → reopen through a cloud provider cannot be exercised
   without a device.
 
+## Workspace folders (ticket #9)
+
+Workspace folders use the same SAF path as documents, still without a storage
+permission.
+
+- `Change Workspace Directory` uses `GtkFileDialog::select_folder`. GTK's Android
+  file chooser maps `GTK_FILE_CHOOSER_ACTION_SELECT_FOLDER` to
+  `ACTION_OPEN_DOCUMENT_TREE`, so the capability module reports the folder
+  picker as supported on Android.
+- The picker returns a `GdkAndroidContentFile` over the tree URI. GTK's
+  `GtkDirectoryList` enumerates it through `GdkAndroidContentFile`'s
+  `DocumentsContract.buildChildDocumentsUriUsingTree` enumerator, so the
+  workspace browser lists notes and folders with the same `gio::File` code as on
+  desktop. No SAF bridge was needed.
+- The workspace entry stores the tree URI (not the content path that
+  `GdkAndroidContentFile` reports from `path()`). It is resolved back with
+  `gio::File::for_uri` on load.
+- Content directories cannot be watched (`GFileMonitor` is unimplemented), so
+  the workspace list only monitors native directories. Pull to refresh or
+  reselect the workspace after another app changes it.
+- The initial workspace is app-specific
+  (`<app files>/share/rnote/workspace`, created on first use) instead of the
+  desktop home directory. It is the local fallback: notes can be created and
+  opened there when a provider cannot enumerate its tree.
+
+Device steps:
+
+1. `just android-app-install`, open the workspace sidebar, and edit the workspace.
+2. Press `Change Workspace Directory`, pick a folder through the system tree
+   picker, and apply.
+3. Check the notes are listed and open one from the list.
+4. Rotate or background the app and confirm the workspace survives.
+5. Kill the process and reopen it: the grant is not persisted yet (ticket #10),
+   so expect to reselect the folder until that lands. The app-specific default
+   workspace stays available meanwhile.
+
+Device-time gaps:
+
+- Provider trees differ. Some providers do not implement children queries; the
+  list then shows an error/empty state and the app-specific workspace is the
+  fallback.
+- Tree URI grants are not persisted across process death (ticket #10).
+- Moving up from a tree root is disabled, because content files have no parent
+  directory.
+
 ## What is verified, and what still needs an SDK host
 
 Verified without an SDK/NDK/device:
@@ -249,8 +301,13 @@ Verified without an SDK/NDK/device:
   desktop;
 - document classification from MIME type and extension, and document identity,
   folder display and watcher gating for `content://` URIs (unit tests);
+- workspace URI identity, tree-URI enumeration through the `gio::File` seam, and
+  the Android folder-picker capability (unit tests);
 - `cargo check -p rnote --target aarch64-linux-android --bin rnote` compiles the
   Android cfg paths (resvg SVG path, pure-Rust gettext, silent audio stub);
+- the perf recorder is unit-tested on desktop (percentiles, gate comparison,
+  RSS parsing, opt-in rules) and `bash -n` checks the perf-toggle/device-check
+  scripts;
 - pinned tags/commits resolve to the recorded revisions and the Gradle 9.6.0
   distribution checksum matches the pinned wrapper.
 
@@ -305,7 +362,8 @@ Known device-time gaps, deliberately not solved in ticket #6:
   list). Translations are packaged and the reader works when a locale is
   selected.
 - Stylus pressure, IME, and the rest of the spike are later tickets, not part
-  of this build wiring. SAF open/save landed in ticket #8 (see above).
+  of this build wiring. SAF open/save landed in ticket #8 and SAF workspace
+  folders in ticket #9 (see above).
 
 ## CI
 
