@@ -4,6 +4,10 @@
 
   Run from this directory via scripts/setup.sh with RSNOTE_ANDROID_TARGET=app.
   Revisions match misc/android/versions.env; setup.sh fails on drift.
+
+  Pixiewood turns the AppStream mediatype below into a VIEW filter for
+  application/rnote. The .rnote extension/octet-stream filter that file
+  managers need is added by scripts/patch-manifest.py after generation.
 -->
 <app xmlns="https://sp1rit.arpa/pixiewood/" xmlns:xi="http://www.w3.org/2001/XInclude">
   <metainfo vercalc="sem121010">

@@ -13,6 +13,12 @@ source "$SCRIPT_DIR/env.sh"
 
 cd "$APP_SRC_DIR"
 "$PIXIEWOOD_DIR/pixiewood" generate
+if [ "$ANDROID_TARGET" = "app" ]; then
+  # Pixiewood can only emit MIME-type filters; .rnote files arrive as
+  # application/octet-stream, which needs a path-pattern filter (ticket #14).
+  python3 "$SCRIPT_DIR/patch-manifest.py" \
+    "$APP_SRC_DIR/_pixiewood/android/app/src/main/AndroidManifest.xml"
+fi
 "$PIXIEWOOD_DIR/pixiewood" build "$@"
 
 apk_dir=$APP_SRC_DIR/_pixiewood/android/app/build/outputs/apk/debug
