@@ -150,6 +150,46 @@ fn android_dirs() -> anyhow::Result<AndroidDirs> {
     ))
 }
 
+/// Android locale tags are BCP-47 (`de-DE`); the translation reader and
+/// libintl look for POSIX names (`de_DE`).
+#[cfg(any(target_os = "android", test))]
+pub(crate) fn android_locale_tag(raw: &str) -> Option<String> {
+    let tag = raw.trim().replace('-', "_");
+    (!tag.is_empty()).then_some(tag)
+}
+
+/// Android does not export the Java locale to the POSIX environment. Read the
+/// system locale property so the catalog reader can select a translation.
+#[cfg(target_os = "android")]
+fn android_system_locale() -> Option<String> {
+    const PROPS: [&std::ffi::CStr; 2] = [c"persist.sys.locale", c"ro.product.locale"];
+
+    unsafe extern "C" {
+        fn __system_property_get(
+            name: *const std::ffi::c_char,
+            value: *mut std::ffi::c_char,
+        ) -> std::ffi::c_int;
+    }
+
+    for prop in PROPS {
+        // Android's PROP_VALUE_MAX is 92 bytes; 128 leaves room for the NUL.
+        let mut value = [0 as std::ffi::c_char; 128];
+        // SAFETY: both pointers are valid for the duration of the call and the
+        // property API NUL-terminates the value.
+        let len = unsafe { __system_property_get(prop.as_ptr(), value.as_mut_ptr()) };
+        if len <= 0 {
+            continue;
+        }
+        // SAFETY: a positive length means the buffer holds a NUL-terminated value.
+        if let Ok(raw) = unsafe { std::ffi::CStr::from_ptr(value.as_ptr()) }.to_str()
+            && let Some(tag) = android_locale_tag(raw)
+        {
+            return Some(tag);
+        }
+    }
+    None
+}
+
 pub(crate) fn app_cache_dir() -> anyhow::Result<PathBuf> {
     #[cfg(target_os = "android")]
     let app_cache_dir = android_dirs()?.cache;
@@ -244,6 +284,26 @@ pub(crate) fn setup_env() -> anyhow::Result<()> {
             // SAFETY: this setup only happens while still being single-threaded
             unsafe { std::env::set_var("GSK_RENDERER", "gl") };
         }
+
+        // Android has no dconf module. The keyfile backend writes under
+        // XDG_CONFIG_HOME (GTK's Android runtime points it at the app's files
+        // dir), so app settings survive a restart without a private store.
+        if std::env::var_os("GSETTINGS_BACKEND").is_none() {
+            // SAFETY: this setup only happens while still being single-threaded
+            unsafe { std::env::set_var("GSETTINGS_BACKEND", "keyfile") };
+        }
+
+        // Android does not export the Java locale, so pick it up from the
+        // system property before the catalog reader looks at the environment.
+        #[cfg(target_os = "android")]
+        {
+            if std::env::var_os("LANGUAGE").is_none()
+                && let Some(locale) = android_system_locale()
+            {
+                // SAFETY: this setup only happens while still being single-threaded
+                unsafe { std::env::set_var("LANGUAGE", locale) };
+            }
+        }
     } else if cfg!(target_os = "macos") {
         let canonicalized_exec_dir = exec_parent_dir()?.canonicalize()?;
 
@@ -276,6 +336,18 @@ fn exec_parent_dir() -> anyhow::Result<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn android_locale_tags_become_posix_language_names() {
+        assert_eq!(android_locale_tag("de-DE").as_deref(), Some("de_DE"));
+        assert_eq!(android_locale_tag("pt-BR").as_deref(), Some("pt_BR"));
+        assert_eq!(
+            android_locale_tag("zh-Hans-CN").as_deref(),
+            Some("zh_Hans_CN")
+        );
+        assert_eq!(android_locale_tag(""), None);
+        assert_eq!(android_locale_tag("  "), None);
+    }
 
     #[test]
     fn android_dirs_prefer_the_xdg_base_dirs() {

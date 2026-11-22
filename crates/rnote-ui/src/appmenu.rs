@@ -1,5 +1,6 @@
 // Imports
 use crate::appwindow::RnAppWindow;
+use crate::i18n::gettext;
 use adw::{prelude::*, subclass::prelude::*};
 use gtk4::{CompositeTemplate, MenuButton, PopoverMenu, ToggleButton, Widget, gio, glib};
 
@@ -19,6 +20,8 @@ mod imp {
         pub(crate) lefthanded_toggle: TemplateChild<ToggleButton>,
         #[template_child]
         pub(crate) righthanded_toggle: TemplateChild<ToggleButton>,
+        #[template_child]
+        pub(crate) fullscreen_toggle: TemplateChild<gtk4::Button>,
     }
 
     #[glib::object_subclass]
@@ -40,6 +43,9 @@ mod imp {
         fn constructed(&self) {
             self.parent_constructed();
 
+            self.menubutton
+                .get()
+                .update_property(&[gtk4::accessible::Property::Label(&gettext("App Menu"))]);
             self.menubutton
                 .get()
                 .set_popover(Some(&self.popovermenu.get()));
@@ -83,6 +89,26 @@ impl RnAppMenu {
     }
 
     pub(crate) fn init(&self, appwindow: &RnAppWindow) {
+        // Icon-only quick controls need an accessible name for screen readers.
+        self.imp()
+            .lefthanded_toggle
+            .get()
+            .update_property(&[gtk4::accessible::Property::Label(&gettext(
+                "Sidebar on the Left Side",
+            ))]);
+        self.imp()
+            .righthanded_toggle
+            .get()
+            .update_property(&[gtk4::accessible::Property::Label(&gettext(
+                "Sidebar on the Right Side",
+            ))]);
+        self.imp()
+            .fullscreen_toggle
+            .get()
+            .update_property(&[gtk4::accessible::Property::Label(&gettext(
+                "Toggle Fullscreen",
+            ))]);
+
         self.imp()
             .lefthanded_toggle
             .bind_property("active", appwindow, "righthanded")

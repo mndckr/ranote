@@ -1,7 +1,7 @@
 // Imports
 use crate::appwindow::RnAppWindow;
 use adw::{prelude::*, subclass::prelude::*};
-use gtk4::{gdk, glib, glib::clone};
+use gtk4::{gdk, gio, glib, glib::clone};
 use tracing::error;
 
 impl RnAppWindow {
@@ -14,14 +14,19 @@ impl RnAppWindow {
 
         app.style_manager().connect_color_scheme_notify(clone!(
             #[weak]
+            app,
+            #[weak]
             app_settings,
-            move |style_manager| {
-                let color_scheme = match style_manager.color_scheme() {
-                    adw::ColorScheme::Default => String::from("default"),
-                    adw::ColorScheme::ForceLight => String::from("force-light"),
-                    adw::ColorScheme::ForceDark => String::from("force-dark"),
-                    _ => String::from("default"),
-                };
+            move |_style_manager| {
+                // Save the requested scheme, not the effective one: on Android
+                // the style manager follows the system night mode when the
+                // setting is "default".
+                let color_scheme = app
+                    .lookup_action("color-scheme")
+                    .and_then(|action| action.downcast::<gio::SimpleAction>().ok())
+                    .and_then(|action| action.state())
+                    .and_then(|state| state.get::<String>())
+                    .unwrap_or_else(|| String::from("default"));
 
                 if let Err(e) = app_settings.set_string("color-scheme", &color_scheme) {
                     error!("Failed to set setting `color-scheme`, Err: {e:?}");

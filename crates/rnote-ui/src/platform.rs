@@ -75,6 +75,84 @@ pub(crate) fn app_draws_ime_preedit() -> bool {
     cfg!(target_os = "android")
 }
 
+/// Resolve the persisted color-scheme choice to the scheme to apply.
+///
+/// `system_prefers_dark` is the OS night-mode preference, or `None` when the
+/// platform does not expose one (desktop). Android's libadwaita integration
+/// does not see the Android night mode, so the platform module feeds it in.
+#[cfg_attr(not(any(target_os = "android", test)), allow(dead_code))]
+pub(crate) fn resolve_system_color_scheme(
+    requested: &str,
+    system_prefers_dark: Option<bool>,
+) -> adw::ColorScheme {
+    match requested {
+        "force-light" => adw::ColorScheme::ForceLight,
+        "force-dark" => adw::ColorScheme::ForceDark,
+        _ => match system_prefers_dark {
+            Some(true) => adw::ColorScheme::ForceDark,
+            Some(false) => adw::ColorScheme::ForceLight,
+            None => adw::ColorScheme::Default,
+        },
+    }
+}
+
+/// Android's GDK backend exposes the system night mode as a `night-mode`
+/// property (enum: 0 undefined, 1 no, 2 yes). Desktop displays have no such
+/// property, so this stays Android-only.
+#[cfg(target_os = "android")]
+fn system_prefers_dark() -> Option<bool> {
+    let display = gtk4::gdk::Display::default()?;
+    if display.find_property("night-mode").is_none() {
+        return None;
+    }
+
+    match display.property_value("night-mode").get::<i32>() {
+        Ok(2) => Some(true),
+        Ok(1) => Some(false),
+        _ => None,
+    }
+}
+
+/// Make libadwaita follow Android's dark mode when the stored color scheme is
+/// "default". The app action's state keeps the user's requested scheme, so a
+/// forced light/dark choice still wins and only the effective theme follows the
+/// system.
+#[cfg(target_os = "android")]
+pub(crate) fn follow_system_color_scheme(
+    style_manager: &adw::StyleManager,
+    action: &gio::SimpleAction,
+) {
+    let Some(display) = gtk4::gdk::Display::default() else {
+        return;
+    };
+    if display.find_property("night-mode").is_none() {
+        return;
+    }
+
+    let update = {
+        let style_manager = style_manager.clone();
+        let action = action.clone();
+        move || {
+            let requested = action
+                .state()
+                .and_then(|state| state.get::<String>())
+                .unwrap_or_else(|| String::from("default"));
+
+            style_manager.set_color_scheme(resolve_system_color_scheme(
+                &requested,
+                system_prefers_dark(),
+            ));
+        }
+    };
+
+    update();
+    action.connect_notify_local(Some("state"), {
+        let update = update.clone();
+        move |_, _| update()
+    });
+    display.connect_notify_local(Some("night-mode"), move |_, _| update());
+}
+
 /// Disable an action whose feature the platform cannot back, so a broken dialog
 /// is never reachable from the menu or an accelerator.
 pub(crate) fn apply_capabilities(caps: Capabilities, feature: Feature, action: &gio::SimpleAction) {
@@ -220,6 +298,34 @@ mod tests {
 
         assert_eq!(take_launch_file().map(|f| f.uri()), Some(file.uri()));
         assert!(take_launch_file().is_none());
+    }
+
+    #[test]
+    fn default_color_scheme_follows_the_android_night_mode() {
+        assert_eq!(
+            resolve_system_color_scheme("default", Some(true)),
+            adw::ColorScheme::ForceDark
+        );
+        assert_eq!(
+            resolve_system_color_scheme("default", Some(false)),
+            adw::ColorScheme::ForceLight
+        );
+        assert_eq!(
+            resolve_system_color_scheme("default", None),
+            adw::ColorScheme::Default
+        );
+    }
+
+    #[test]
+    fn explicit_color_scheme_wins_over_the_android_night_mode() {
+        assert_eq!(
+            resolve_system_color_scheme("force-dark", Some(false)),
+            adw::ColorScheme::ForceDark
+        );
+        assert_eq!(
+            resolve_system_color_scheme("force-light", Some(true)),
+            adw::ColorScheme::ForceLight
+        );
     }
 
     #[test]
