@@ -23,7 +23,8 @@ there.
 | Component | Pin | Commit / note |
 |---|---|---|
 | GTK | 4.22.5 | `bd25f1e2dc2c2fbf3b8864e61afe642910ba359c` |
-| libadwaita | 1.9.4 | `dfc1d654639d3160c3689597274cb537f164c25d` (requires GTK >= 4.21.1) |
+| fontconfig | 2.17.1 | `6d0a98982ec351c165c9224c8b7dbdfca3010e47` (newer `main` breaks pango 1.56) |
+| libadwaita | 1.10.alpha | `dab4459427c9e518af87d1c54fe1f1f410bc9752` (last 1.10 snapshot that requires GTK >= 4.21.1) |
 | GLib | 2.88.4 | `802d1893cd5f4928991b5295263f1700311a3490` |
 | Android NDK | 27.2.12479018 | same NDK GTK's Android CI installs |
 | SDK platform / build-tools | android-36 / 36.0.0 | `minSdk 31`, `targetSdk 36` |
@@ -32,11 +33,14 @@ there.
 | Android Gradle Plugin | 9.4.1 | `gradle/libs.versions.toml` from that skeleton |
 | JDK | 21 | Gradle 9.6/AGP 9.x need 17+, 21 is the pinned LTS |
 | pixiewood | master `001bfc0cae770438cc051458afc455564e83e3aa` | |
-| meson | 1.9.2 | `android_exe_type` needs >= 1.9 |
+| meson | 1.12.1 | `android_exe_type` needs >= 1.9; fontconfig 2.17.1 needs >= 1.6.1 |
 | Rust | 1.89 minimum; targets `aarch64-linux-android`, `x86_64-linux-android` | `setup.sh` adds both with rustup for the app build |
 
-GTK 4.22.5 is the newest 4.22.x. libadwaita 1.10 requires GTK >= 4.23.1, so
-1.9.4 is the newest libadwaita that builds against GTK 4.22.
+GTK 4.22.5 is the newest 4.22.x. Released libadwaita 1.10 needs GTK >= 4.23.1,
+so the pin is the last 1.10.alpha commit that still requires GTK >= 4.21.1.
+1.9.4 is not usable with pixiewood: it pulls appstream, whose main branch
+dropped the `svg-support` option and added libcurl/libfyaml dependencies.
+1.10 replaced appstream with the dependency-light ministream.
 
 ## Host prerequisites
 
@@ -48,7 +52,7 @@ Linux x86_64. The build needs the pixiewood host tools plus a JDK:
 
 The app build also needs `cargo` and `rustup` in `PATH`.
 
-`scripts/setup.sh` creates its own meson 1.9.2 virtualenv and installs the SDK,
+`scripts/setup.sh` creates its own meson 1.12.1 virtualenv and installs the SDK,
 NDK and pixiewood under `$HOME/Android/Sdk` and
 `${XDG_CACHE_HOME:-$HOME/.cache}/ranote-android`. It does not use `sudo` and
 does not modify system packages. Set `ANDROID_HOME` to use an existing SDK

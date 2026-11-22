@@ -99,6 +99,8 @@ git -C "$PIXIEWOOD_DIR" checkout --quiet "$PIXIEWOOD_COMMIT"
 manifest=$APP_MANIFEST
 grep -q "revision=\"$GTK_COMMIT\"" "$manifest" ||
   die "$manifest does not pin GTK $GTK_VERSION ($GTK_COMMIT)"
+grep -q "revision=\"$FONTCONFIG_COMMIT\"" "$manifest" ||
+  die "$manifest does not pin fontconfig $FONTCONFIG_VERSION ($FONTCONFIG_COMMIT)"
 grep -q "revision=\"$LIBADWAITA_COMMIT\"" "$manifest" ||
   die "$manifest does not pin libadwaita $LIBADWAITA_VERSION ($LIBADWAITA_COMMIT)"
 grep -q "revision=\"$GLIB_COMMIT\"" "$manifest" ||

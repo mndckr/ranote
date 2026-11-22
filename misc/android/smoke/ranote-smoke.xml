@@ -21,9 +21,9 @@
       <patch>hack</patch>
     </glib>
     <cairo/>
-    <fontconfig/>
+    <fontconfig revision="6d0a98982ec351c165c9224c8b7dbdfca3010e47"/>
     <gtk revision="bd25f1e2dc2c2fbf3b8864e61afe642910ba359c"/>
-    <libadwaita revision="dfc1d654639d3160c3689597274cb537f164c25d"/>
+    <libadwaita revision="dab4459427c9e518af87d1c54fe1f1f410bc9752"/>
   </dependencies>
   <build target="ranote-smoke">
     <architectures>
