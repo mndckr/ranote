@@ -1,25 +1,24 @@
-# Android GTK smoke app
+# Android builds
 
-A throwaway GTK 4 + libadwaita app that is cross-compiled, packaged, installed
-and launched on Android. It exists to prove the pinned toolchain **before**
-rnote is involved (ticket #5). It contains no rnote code, does not touch
-`rnote-ui`, and is not the Android rnote build (that is ticket #6).
+Two GTK 4 + libadwaita builds share one pinned toolchain:
 
-The app shows an Adwaita window with an `AdwStatusPage` and one button, logs GTK
-and libadwaita versions, and forces `GSK_RENDERER=gl`. If GL cannot initialize
-that is a failed spike gate, not a reason to add a renderer fallback.
+- [`smoke/`](smoke) is a throwaway C app that proves the toolchain before rnote
+  is involved (ticket #5). It contains no rnote code.
+- [`app/`](app) is the real `rnote-ui` cross-build (ticket #6). It builds the
+  desktop Rust workspace unchanged, plus a small meson wrapper that installs the
+  app library, translations and GSettings schema into the APK.
 
-Build integration follows GTK's Android path: [pixiewood][pixiewood] (GTK Android
-builder) generates the meson cross files, the NDK toolchain file, the Gradle
-project and the AndroidManifest from a small manifest. It is the same builder
-GTK uses in its own CI.
+Both use [pixiewood][pixiewood] (GTK Android builder), the same builder GTK uses
+in its own CI. It generates the meson cross files, the NDK toolchain file, the
+Gradle project and the AndroidManifest from a small manifest.
 
 [pixiewood]: https://github.com/sp1ritCS/gtk-android-builder
 
 ## Pins
 
 All pins live in [`versions.env`](versions.env); `scripts/setup.sh` fails if the
-pixiewood manifest drifts from the GTK/libadwaita/GLib commits recorded there.
+selected pixiewood manifest drifts from the GTK/libadwaita/GLib commits recorded
+there.
 
 | Component | Pin | Commit / note |
 |---|---|---|
@@ -34,7 +33,7 @@ pixiewood manifest drifts from the GTK/libadwaita/GLib commits recorded there.
 | JDK | 21 | Gradle 9.6/AGP 9.x need 17+, 21 is the pinned LTS |
 | pixiewood | master `001bfc0cae770438cc051458afc455564e83e3aa` | |
 | meson | 1.9.2 | `android_exe_type` needs >= 1.9 |
-| Rust | 1.89 minimum; targets `aarch64-linux-android`, `x86_64-linux-android` | recorded for ticket #6; the #5 smoke app is C |
+| Rust | 1.89 minimum; targets `aarch64-linux-android`, `x86_64-linux-android` | `setup.sh` adds both with rustup for the app build |
 
 GTK 4.22.5 is the newest 4.22.x. libadwaita 1.10 requires GTK >= 4.23.1, so
 1.9.4 is the newest libadwaita that builds against GTK 4.22.
@@ -47,6 +46,9 @@ Linux x86_64. The build needs the pixiewood host tools plus a JDK:
 - Fedora: `perl-Glib perl-Glib-Object-Introspection perl-IPC-Run perl-JSON perl-Set-Scalar perl-XML-LibXML perl-XML-LibXSLT appstream java-21-openjdk-devel gcc gcc-c++ glib2-devel glib2-tools libxml2-utils ninja-build sassc glslc unzip curl git python3`
 - Debian/Ubuntu: `libglib-perl libglib-object-introspection-perl libipc-run-perl libjson-perl libset-scalar-perl libxml-libxml-perl libxml-libxslt-perl gir1.2-appstream openjdk-21-jdk build-essential libglib2.0-dev-bin libxml2-utils ninja-build sassc glslc unzip curl git python3 python3-venv`
 
+The app build also needs `pkg-config`, `msgfmt` (gettext), `cargo` and `rustup`
+in `PATH`.
+
 `scripts/setup.sh` creates its own meson 1.9.2 virtualenv and installs the SDK,
 NDK and pixiewood under `$HOME/Android/Sdk` and
 `${XDG_CACHE_HOME:-$HOME/.cache}/rsnote-android`. It does not use `sudo` and
@@ -55,24 +57,93 @@ instead.
 
 ## Build, install, run
 
-From the repo root:
+The real rnote UI (ticket #6):
 
 ```sh
-just android-setup        # SDK/NDK/meson/pixiewood + meson configure (downloads several GB)
-just android-build        # cross-compile + Gradle package
-just android-install      # adb install -r + launch
-just android-logcat       # filtered Gtk/Gdk/GLib/rsnote-smoke/AndroidRuntime log
-just android-device-check # device, GPU, version, memory, frame stats, logcat
+just android-app-setup        # SDK/NDK/meson/pixiewood + meson configure (downloads several GB)
+just android-app-build        # cross-compile rnote-ui + Gradle package
+just android-app-install      # adb install -r + launch
+just android-app-logcat       # filtered Gtk/Gdk/GLib/rnote/AndroidRuntime log
+just android-app-device-check # device, GPU, version, memory, frame stats, logcat
+```
+
+The toolchain smoke app (ticket #5):
+
+```sh
+just android-setup
+just android-build
+just android-install
+just android-logcat
+just android-device-check
 ```
 
 Artifacts:
 
-- APK: `misc/android/build/rsnote-smoke.apk` (universal debug APK).
-- Raw Gradle output: `misc/android/smoke/_pixiewood/android/app/build/outputs/apk/debug/`.
+- rnote APK: `misc/android/build/rsnote-android.apk`.
+- smoke APK: `misc/android/build/rsnote-smoke.apk`.
+- Raw Gradle output: `misc/android/{app,smoke}/_pixiewood/android/app/build/outputs/apk/debug/`.
 - Device report: `misc/android/build/device-check-<timestamp>.txt`.
 
-App identity: package `org.rsnote.smoke`, activity
-`org.gtk.android.ToplevelActivity`, AppStream id `org.rsnote.Smoke`.
+App identity:
+
+| | rnote | smoke |
+|---|---|---|
+| Package | `com.github.flxzt.rnote` | `org.rsnote.smoke` |
+| Activity | `org.gtk.android.ToplevelActivity` | same |
+| AppStream id | `com.github.flxzt.rnote` | `org.rsnote.Smoke` |
+| MIME | `application/rnote` | none |
+
+## How the rnote app is built
+
+`app/meson.build` is not a second build system; it is the Android entry point
+for the existing workspace:
+
+- `config.rs` is generated from the desktop template with the release app id.
+  The generated file is written into `crates/rnote-ui/src/` because Cargo's
+  `config` module expects it there, exactly as the desktop meson build does.
+- `cargo rustc --bin rnote` builds for the ABI selected by pixiewood's cross
+  file. `scripts/cargo-build.sh` wraps it because GTK's Android
+  `RuntimeApplication` loads the app with `dlopen()` and resolves an exported
+  `main`, so the Rust binary is linked with `-shared -Wl,--export-dynamic` and
+  installed as `lib/<abi>/librnote.so`. The wrapper fails the build if `main`
+  is not in the dynamic symbol table.
+- gtk-rs finds GLib/GTK through pkg-config. The NDK ships no pkg-config, so the
+  wrapper symlinks meson's `<name>-uninstalled.pc` files to `<name>.pc`, sets
+  `PKG_CONFIG_ALLOW_CROSS=1` and searches only that directory. This is the
+  whole gtk-rs Android workaround: no fork and no patch.
+- The Rust cargo target depends on GTK's and libadwaita's meson targets, so the
+  generated headers and shared libraries exist before pkg-config and the linker
+  run.
+- Translations are built with `msgfmt` and installed with the `runtime` install
+  tag. Meson's `i18n.gettext()` tags `.mo` files as `i18n`, which pixiewood's
+  `meson install --tags runtime` would skip. Files land in
+  `share/locale/<lang>/LC_MESSAGES/<lang>.mo`; the Android reader scans that
+  directory for `*.mo`.
+- The GSettings schema is installed to `share/glib-2.0/schemas`; pixiewood
+  compiles it and copies it into the asset root. The gresource (UI files,
+  icons, CSS) is embedded in `librnote.so` by `build.rs` as on desktop.
+
+Pixiewood copies everything installed from `share/` into APK assets; GTK's
+Android runtime copies the assets to the app files dir and points
+`XDG_DATA_DIRS` at `files/share`. That covers assets, locales and schemas.
+
+### Dependency gaps handled here
+
+- **librsvg**: the C librsvg crate does not cross-build for Android. The
+  Android target depends on pure-Rust `resvg` instead and routes
+  `Svg::draw_to_cairo` / `Svg::gen_image` through it. Desktop still uses
+  librsvg, so rendering is unchanged there.
+- **gettext/libintl**: Android has no libintl and `gettext-sys` would try to
+  build GNU gettext from source. The Android target drops `gettext-rs` and uses
+  the small `.mo` reader in `crates/rnote-ui/src/i18n.rs`. Desktop still uses
+  system gettext.
+- **pen sounds**: rodio has no Android backend. The engine's `ui` and `audio`
+  features are split; Android enables only `ui`, which compiles a silent
+  `AudioPlayer` stub. `Capabilities` also reports pen sounds unsupported, so
+  the UI toggle cannot turn them on.
+- **renderer**: `env::setup_env()` sets `GSK_RENDERER=gl` on Android before GTK
+  starts. There is no cairo fallback: if GL cannot initialize, that is a failed
+  gate with logs.
 
 ### Emulator
 
@@ -82,8 +153,8 @@ working GL stack:
 ```sh
 sdkmanager --sdk_root="$ANDROID_HOME" \
   "emulator" "system-images;android-36;google_apis;x86_64"
-avdmanager create avd -n rsnote-smoke -k "system-images;android-36;google_apis;x86_64"
-emulator -avd rsnote-smoke -gpu host
+avdmanager create avd -n rsnote -k "system-images;android-36;google_apis;x86_64"
+emulator -avd rsnote -gpu host
 ```
 
 Use `-gpu host` on a machine with a GPU. `-gpu swiftshader_indirect` can boot
@@ -94,11 +165,11 @@ failure.
 
 ```sh
 just android-clean        # remove generated build dirs and downloaded subprojects
-just android-setup
+just android-app-setup
 ```
 
-`android-setup` resets the meson build directories itself; `android-clean` is
-only needed after changing a pin, because meson does not advance an existing
+`android-app-setup` resets the meson build directories itself; `android-clean`
+is only needed after changing a pin, because meson does not advance an existing
 `subprojects/` checkout when a wrap revision changes.
 
 ## Layout
@@ -106,32 +177,57 @@ only needed after changing a pin, because meson does not advance an existing
 ```
 misc/android/
   versions.env                 pins (single source of truth)
-  scripts/{setup,build,install,logcat,device-check}.sh
+  scripts/
+    setup.sh build.sh install.sh logcat.sh device-check.sh   shared, target-aware
+    cargo-build.sh             rnote-ui cross-build + gtk-rs pkg-config bridge
+    env.sh                     RSNOTE_ANDROID_TARGET=smoke|app selection
   smoke/
     meson.build                GTK + libadwaita target, android_exe_type: 'application'
     src/main.c                 minimal AdwApplication smoke UI
     rsnote-smoke.xml           pixiewood manifest (deps + revisions)
-    org.rsnote.Smoke.metainfo.xml
+  app/
+    meson.build                rnote-ui cargo target, locales, GSchema
+    rsnote.xml                 pixiewood manifest (deps + revisions)
+    com.github.flxzt.rnote.metainfo.xml
     icons/ic-launcher-foreground.xml   hand-written AVD, so no Svg2Avd/Android Studio
 ```
 
-## What this branch verifies, and what still needs an SDK host
+## What is verified, and what still needs an SDK host
 
-Verified without an SDK/NDK/device (see the ticket #5 report):
+Verified without an SDK/NDK/device:
 
-- shell script syntax, XML well-formedness, pixiewood manifest schema;
-- meson 1.9.2 accepts the project and `android_exe_type: 'application'`;
-- pinned tags/commits resolve to the recorded revisions;
-- the Gradle 9.6.0 distribution checksum matches the pinned wrapper.
+- shell script syntax, XML well-formedness, pixiewood manifest shape;
+- meson 1.9.2 configures the app project (with stand-in subprojects), finds the
+  `rnote` target, and installs it with the `runtime` tag only; `msgfmt` builds
+  the real `po/*.po` files;
+- `cargo check --workspace --all-targets` and the workspace tests pass on
+  desktop;
+- `cargo check -p rnote --target aarch64-linux-android --bin rnote` compiles the
+  Android cfg paths (resvg SVG path, pure-Rust gettext, silent audio stub);
+- pinned tags/commits resolve to the recorded revisions and the Gradle 9.6.0
+  distribution checksum matches the pinned wrapper.
 
 Still requires a machine with the Android SDK, NDK and a device/emulator:
 
-- `just android-setup` (SDK download, meson cross-configure, GTK libadwaita
-  cross-build);
-- `just android-build` (Gradle APK);
-- `just android-install`, a GTK window in the emulator, and `just android-logcat`
-  showing `GSK_RENDERER=gl` and a GL renderer type;
-- `just android-device-check`.
+- `just android-app-setup` (SDK download, meson cross-configure, GTK/libadwaita
+  cross-build, rustup targets);
+- `just android-app-build` (cargo cross-link against pixiewood's GTK,
+  `librnote.so` install, Gradle APK);
+- `just android-app-install`, the rnote window in the emulator, and
+  `just android-app-logcat` showing `GSK_RENDERER=gl` and a GL renderer type;
+- `just android-app-device-check`.
+
+Known device-time gaps, deliberately not solved in ticket #6:
+
+- The pinned GTK wrap builds gdk-pixbuf without the librsvg SVG loader, so the
+  app's SVG icons may not render. The window and adaptive UI do not depend on
+  them.
+- Android does not export the Java locale to the POSIX environment, so locale
+  selection is best effort (`LANGUAGE`/`LC_*`/`LANG`, then GLib's language
+  list). Translations are packaged and the reader works when a locale is
+  selected.
+- Stylus pressure, SAF file access, lifecycle/autosave, IME, and the rest of the
+  spike are later tickets (#7+), not part of this build wiring.
 
 CI for the APK and fuller device-check tooling is ticket #7; this directory
 deliberately adds no workflow.

@@ -1,5 +1,8 @@
 // Imports
-use crate::image::{Image, ImageMemoryFormat, convert_image_bgra_to_rgba};
+#[cfg(not(target_os = "android"))]
+use crate::image::convert_image_bgra_to_rgba;
+use crate::image::{Image, ImageMemoryFormat};
+#[cfg(not(target_os = "android"))]
 use anyhow::Context;
 use once_cell::sync::Lazy;
 use p2d::bounding_volume::{Aabb, BoundingVolume};
@@ -160,6 +163,7 @@ impl Svg {
         Self::gen_with_cairo(cairo_draw_fn, bounds)
     }
 
+    #[cfg(not(target_os = "android"))]
     pub fn draw_to_cairo(&self, cx: &cairo::Context) -> anyhow::Result<()> {
         let svg_data = self.to_document();
         let stream = gio::MemoryInputStream::from_bytes(&glib::Bytes::from(svg_data.as_bytes()));
@@ -185,6 +189,7 @@ impl Svg {
     /// Generate an image from an Svg.
     ///
     /// Using rsvg for rendering.
+    #[cfg(not(target_os = "android"))]
     pub fn gen_image(&self, image_scale: f64) -> Result<Image, anyhow::Error> {
         let svg_data = self.to_document();
         let width_scaled = (self.bounds.extents()[0] * image_scale).round() as u32;
@@ -250,4 +255,98 @@ impl Svg {
             memory_format: ImageMemoryFormat::R8g8b8a8Premultiplied,
         })
     }
+
+    /// Draw the Svg onto a cairo context.
+    ///
+    /// Android has no librsvg C library, so this rasterizes through the
+    /// pure-Rust resvg path used by the Android build instead.
+    #[cfg(target_os = "android")]
+    pub fn draw_to_cairo(&self, cx: &cairo::Context) -> anyhow::Result<()> {
+        let width = self.bounds.extents()[0].ceil().max(1.0) as u32;
+        let height = self.bounds.extents()[1].ceil().max(1.0) as u32;
+        let pixmap =
+            render_svg_to_pixmap(&self.to_document(), width, height, self.bounds.mins, 1.0)?;
+
+        let mut surface =
+            cairo::ImageSurface::create(cairo::Format::ARgb32, width as i32, height as i32)?;
+        {
+            copy_pixmap_to_cairo(&pixmap, &mut surface)?;
+        }
+        cx.set_source_surface(&surface, self.bounds.mins[0], self.bounds.mins[1])?;
+        cx.paint()?;
+        Ok(())
+    }
+
+    /// Generate an image from an Svg through the pure-Rust resvg path.
+    #[cfg(target_os = "android")]
+    pub fn gen_image(&self, image_scale: f64) -> Result<Image, anyhow::Error> {
+        let width = (self.bounds.extents()[0] * image_scale).round().max(1.0) as u32;
+        let height = (self.bounds.extents()[1] * image_scale).round().max(1.0) as u32;
+        let pixmap = render_svg_to_pixmap(
+            &self.to_document(),
+            width,
+            height,
+            self.bounds.mins,
+            image_scale,
+        )?;
+
+        Ok(Image {
+            data: glib::Bytes::from_owned(pixmap.data().to_vec()),
+            rectangle: Rectangle::from_p2d_aabb(self.bounds),
+            pixel_width: width,
+            pixel_height: height,
+            // resvg produces rgba8-premultiplied pixels
+            memory_format: ImageMemoryFormat::R8g8b8a8Premultiplied,
+        })
+    }
+}
+
+#[cfg(target_os = "android")]
+fn render_svg_to_pixmap(
+    svg_data: &str,
+    width: u32,
+    height: u32,
+    offset: Vector2,
+    scale: f64,
+) -> Result<resvg::tiny_skia::Pixmap, anyhow::Error> {
+    let tree = usvg::Tree::from_str(
+        svg_data,
+        &usvg::Options {
+            fontdb: Arc::clone(&USVG_FONTDB),
+            ..Default::default()
+        },
+    )?;
+    let mut pixmap = resvg::tiny_skia::Pixmap::new(width, height)
+        .ok_or_else(|| anyhow::anyhow!("creating pixmap with size ({width}, {height}) failed"))?;
+    let scale = scale as f32;
+    let transform = resvg::tiny_skia::Transform::from_scale(scale, scale)
+        .post_translate(-(offset[0] as f32) * scale, -(offset[1] as f32) * scale);
+    resvg::render(&tree, transform, &mut pixmap.as_mut());
+    Ok(pixmap)
+}
+
+/// Copy rgba8-premultiplied pixmap pixels into a cairo ARgb32 (native-endian
+/// bgra8-premultiplied) image surface. Android ABIs are little-endian.
+#[cfg(target_os = "android")]
+fn copy_pixmap_to_cairo(
+    pixmap: &resvg::tiny_skia::Pixmap,
+    surface: &mut cairo::ImageSurface,
+) -> Result<(), anyhow::Error> {
+    let stride = surface.stride() as usize;
+    let width = pixmap.width() as usize;
+    let mut data = surface
+        .data()
+        .map_err(|e| anyhow::anyhow!("accessing cairo image surface data failed, Err: {e:?}"))?;
+
+    for (row, dst_row) in data
+        .chunks_mut(stride)
+        .enumerate()
+        .take(pixmap.height() as usize)
+    {
+        let src_row = &pixmap.data()[row * width * 4..];
+        for (dst, src) in dst_row.chunks_mut(4).zip(src_row.chunks_exact(4)) {
+            dst.copy_from_slice(&[src[2], src[1], src[0], src[3]]);
+        }
+    }
+    Ok(())
 }

@@ -1,6 +1,6 @@
+use crate::i18n::gettext;
 use crate::platform;
 use crate::{RnAppWindow, RnWorkspaceBrowser};
-use gettextrs::gettext;
 use gtk4::{gio, glib, glib::clone, prelude::*};
 
 pub(crate) fn open_folder(

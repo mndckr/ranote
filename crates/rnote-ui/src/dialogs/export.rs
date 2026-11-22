@@ -3,10 +3,10 @@
 // Imports
 use crate::RnStrokeContentPreview;
 use crate::canvas::{self, RnCanvas};
+use crate::i18n::gettext;
 use crate::platform::{self, Feature};
 use crate::{RnAppWindow, config};
 use adw::prelude::*;
-use gettextrs::gettext;
 use gtk4::{Builder, Button, FileDialog, FileFilter, Label, gio, glib, glib::clone};
 use num_traits::ToPrimitive;
 use rnote_compose::SplitOrder;

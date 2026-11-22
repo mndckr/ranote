@@ -1,8 +1,8 @@
 // Imports
 use crate::FileType;
+use crate::i18n::pgettext;
 use anyhow::Context;
 use futures::AsyncWriteExt;
-use gettextrs::pgettext;
 use gtk4::{gdk, gio, prelude::*};
 use palette::convert::IntoColor;
 use path_absolutize::Absolutize;

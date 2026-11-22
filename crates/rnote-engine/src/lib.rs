@@ -9,7 +9,10 @@
 //! The main entry point is the [Engine] struct.
 
 // Modules
-#[cfg(feature = "ui")]
+#[cfg(all(feature = "ui", feature = "audio"))]
+pub mod audioplayer;
+#[cfg(all(feature = "ui", not(feature = "audio")))]
+#[path = "audioplayer_silent.rs"]
 pub mod audioplayer;
 pub mod camera;
 pub mod document;

@@ -268,6 +268,29 @@ android-logcat *ARGS:
 android-device-check *ARGS:
     {{ android_dir }}/scripts/device-check.sh {{ ARGS }}
 
+# Android build of the real rnote UI (misc/android/app). Same SDK/NDK host
+# requirements as the smoke build above.
+
+[doc('Install the pinned Android toolchain and configure the rnote-ui Android build.')]
+android-app-setup:
+    RSNOTE_ANDROID_TARGET=app {{ android_dir }}/scripts/setup.sh
+
+[doc('Cross-compile rnote-ui and package the Android APK.')]
+android-app-build *ARGS:
+    RSNOTE_ANDROID_TARGET=app {{ android_dir }}/scripts/build.sh {{ ARGS }}
+
+[doc('Install the rnote-ui APK on the attached device/emulator and launch it.')]
+android-app-install:
+    RSNOTE_ANDROID_TARGET=app {{ android_dir }}/scripts/install.sh
+
+[doc('Follow filtered logcat from the rnote-ui Android app.')]
+android-app-logcat *ARGS:
+    RSNOTE_ANDROID_TARGET=app {{ android_dir }}/scripts/logcat.sh {{ ARGS }}
+
+[doc('Collect device, GPU, app version, memory, frame and log data for rnote-ui.')]
+android-app-device-check *ARGS:
+    RSNOTE_ANDROID_TARGET=app {{ android_dir }}/scripts/device-check.sh {{ ARGS }}
+
 [doc('Remove generated Android build output and downloaded subprojects.')]
 android-clean:
-    rm -rf {{ android_dir }}/smoke/_pixiewood {{ android_dir }}/smoke/subprojects {{ android_dir }}/smoke/.buildconfig {{ android_dir }}/smoke/pixiewood.ini {{ android_dir }}/build
+    rm -rf {{ android_dir }}/smoke/_pixiewood {{ android_dir }}/smoke/subprojects {{ android_dir }}/smoke/.buildconfig {{ android_dir }}/smoke/pixiewood.ini {{ android_dir }}/app/_pixiewood {{ android_dir }}/app/subprojects {{ android_dir }}/app/.buildconfig {{ android_dir }}/app/pixiewood.ini {{ android_dir }}/build

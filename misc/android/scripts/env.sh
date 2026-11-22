@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Shared paths and pinned versions for the Android smoke build. Sourced, not run.
+# Shared paths and pinned versions for the Android builds. Sourced, not run.
+# Select the target with RSNOTE_ANDROID_TARGET=smoke|app (default: smoke).
 # shellcheck disable=SC2034  # consumed by the scripts that source this file
 
 ANDROID_ROOT=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
@@ -19,17 +20,7 @@ MESON_BIN=$CACHE_DIR/venv/bin/meson
 SDKMANAGER=$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager
 ADB=$ANDROID_HOME/platform-tools/adb
 
-SMOKE_DIR=$ANDROID_ROOT/smoke
 BUILD_DIR=$ANDROID_ROOT/build
-APK=$BUILD_DIR/rsnote-smoke.apk
-
-APP_ID=org.rsnote.Smoke
-PACKAGE=org.rsnote.smoke
-ACTIVITY=org.gtk.android.ToplevelActivity
-
-# Pixiewood and the pinned meson venv shadow system copies.
-PATH=$CACHE_DIR/venv/bin:$PIXIEWOOD_DIR:$ANDROID_HOME/platform-tools:$PATH
-export PATH
 
 die() {
   printf 'error: %s\n' "$*" >&2
@@ -39,3 +30,31 @@ die() {
 require_command() {
   command -v "$1" >/dev/null 2>&1 || die "missing '$1' (see misc/android/README.md)"
 }
+
+ANDROID_TARGET=${RSNOTE_ANDROID_TARGET:-smoke}
+case "$ANDROID_TARGET" in
+  smoke)
+    APP_SRC_DIR=$ANDROID_ROOT/smoke
+    APP_MANIFEST=$APP_SRC_DIR/rsnote-smoke.xml
+    APP_APK=$BUILD_DIR/rsnote-smoke.apk
+    APP_ID=org.rsnote.Smoke
+    PACKAGE=org.rsnote.smoke
+    LOG_TAG=rsnote-smoke
+    ;;
+  app)
+    APP_SRC_DIR=$ANDROID_ROOT/app
+    APP_MANIFEST=$APP_SRC_DIR/rsnote.xml
+    APP_APK=$BUILD_DIR/rsnote-android.apk
+    APP_ID=com.github.flxzt.rnote
+    PACKAGE=com.github.flxzt.rnote
+    LOG_TAG=rnote
+    ;;
+  *)
+    die "unknown RSNOTE_ANDROID_TARGET '$ANDROID_TARGET' (expected smoke or app)"
+    ;;
+esac
+ACTIVITY=org.gtk.android.ToplevelActivity
+
+# Pixiewood and the pinned meson venv shadow system copies.
+PATH=$CACHE_DIR/venv/bin:$PIXIEWOOD_DIR:$ANDROID_HOME/platform-tools:$PATH
+export PATH

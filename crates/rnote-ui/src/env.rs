@@ -57,7 +57,16 @@ pub(crate) fn pkg_data_dir() -> anyhow::Result<PathBuf> {
 pub(crate) fn locale_dir() -> anyhow::Result<PathBuf> {
     #[cfg(target_os = "android")]
     {
-        // There is no writable system locale dir on Android; locales ship in the app data dir.
+        // GLib points XDG_DATA_DIRS at the asset copy (files/share) and
+        // pixiewood installs the .mo files below share/locale there.
+        if let Some(locale_dir) = gtk4::glib::system_data_dirs()
+            .into_iter()
+            .map(|dir| dir.join("locale"))
+            .find(|dir| dir.is_dir())
+        {
+            return Ok(locale_dir);
+        }
+        // Fall back to the app-private data dir when assets were not packaged.
         return Ok(android_dirs()?.locale);
     }
     #[cfg(not(target_os = "android"))]
@@ -228,6 +237,13 @@ pub(crate) fn setup_env() -> anyhow::Result<()> {
         }
 
         //unsafe { std::env::set_var("RUST_LOG", "rnote=debug,rnote-cli=debug,rnote-engine=debug,rnote-compose=debug") };
+    } else if cfg!(target_os = "android") {
+        // The spike gates on GL: if GL cannot initialize that is a failure with
+        // logs, not a reason to fall back to the cairo renderer.
+        if std::env::var_os("GSK_RENDERER").is_none() {
+            // SAFETY: this setup only happens while still being single-threaded
+            unsafe { std::env::set_var("GSK_RENDERER", "gl") };
+        }
     } else if cfg!(target_os = "macos") {
         let canonicalized_exec_dir = exec_parent_dir()?.canonicalize()?;
 

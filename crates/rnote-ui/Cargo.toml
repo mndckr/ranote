@@ -23,7 +23,6 @@ cairo-rs = { workspace = true }
 chrono = { workspace = true }
 fs_extra = { workspace = true }
 futures = { workspace = true }
-gettext-rs = { workspace = true }
 gtk4 = { workspace = true }
 hayro = { workspace = true }
 ijson = { workspace = true }
@@ -63,3 +62,9 @@ glib-build-tools = { workspace = true }
 
 [target.'cfg(windows)'.build-dependencies]
 winresource = { workspace = true }
+
+# gettext-rs with the system gettext backend links libintl, which Android does
+# not provide. The Android build uses the pure-Rust .mo reader in src/i18n.rs.
+[target.'cfg(not(target_os = "android"))'.dependencies]
+gettext-rs = { workspace = true }
+rnote-engine = { workspace = true, features = ["audio"] }

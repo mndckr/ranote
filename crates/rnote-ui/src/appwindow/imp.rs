@@ -1,7 +1,7 @@
 // Imports
+use crate::i18n::gettext;
 use crate::{RnMainHeader, RnOverlays, RnSidebar, config, dialogs};
 use adw::{prelude::*, subclass::prelude::*};
-use gettextrs::gettext;
 use gtk4::{
     Align, ArrowType, CompositeTemplate, CornerType, CssProvider, PackType, PadActionType,
     PadController, PositionType, gdk, gio, glib, glib::clone,
@@ -236,6 +236,9 @@ impl ObjectImpl for RnAppWindow {
         match pspec.name() {
             "pen-sounds" => {
                 let pen_sounds: bool = value.get().expect("The value needs to be of type `bool`");
+                // No audio backend on Android; never let the toggle turn it on.
+                let pen_sounds = pen_sounds
+                    && crate::platform::feature_available(crate::platform::Feature::PenSounds);
                 self.pen_sounds.replace(pen_sounds);
                 if let Some(canvas) = obj.active_tab_canvas() {
                     canvas

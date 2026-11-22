@@ -1,10 +1,10 @@
 // Imports
+use crate::i18n::gettext;
 use crate::{
     RnAppWindow, RnGroupedIconPicker, RnStrokeWidthPicker,
     groupediconpicker::GroupedIconPickerGroupData,
 };
 use adw::{prelude::*, subclass::prelude::*};
-use gettextrs::gettext;
 use gtk4::{
     Button, CompositeTemplate, MenuButton, Popover, StringList, ToggleButton, Widget, glib,
     glib::clone,

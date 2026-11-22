@@ -1,5 +1,5 @@
 // Imports
-use gettextrs::gettext;
+use crate::i18n::gettext;
 use gtk4::{Align, StringObject};
 use gtk4::{
     Image, Label, ListItem, Orientation, SignalListItemFactory, StringList, glib::prelude::*,

@@ -285,7 +285,7 @@ impl Engine {
     pub fn set_pen_sounds(&mut self, pen_sounds: bool, pkg_data_dir: Option<PathBuf>) {
         self.config.write().pen_sounds = pen_sounds;
 
-        #[cfg(feature = "ui")]
+        #[cfg(all(feature = "ui", feature = "audio"))]
         {
             if pen_sounds {
                 if let Some(pkg_data_dir) = pkg_data_dir {
@@ -303,6 +303,16 @@ impl Engine {
                     }
                 }
             } else {
+                self.audioplayer.take();
+            }
+        }
+        #[cfg(not(feature = "audio"))]
+        {
+            // No audio backend (Android): pen sounds can never be on.
+            let _ = pkg_data_dir;
+            self.config.write().pen_sounds = false;
+            #[cfg(feature = "ui")]
+            {
                 self.audioplayer.take();
             }
         }

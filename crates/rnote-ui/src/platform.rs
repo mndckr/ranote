@@ -14,6 +14,7 @@ use std::sync::{Mutex, OnceLock};
 pub(crate) enum Feature {
     Print,
     FolderPicker,
+    PenSounds,
 }
 
 /// What the current platform can do.
@@ -21,6 +22,7 @@ pub(crate) enum Feature {
 pub(crate) struct Capabilities {
     pub(crate) can_print: bool,
     pub(crate) supports_folder_picker: bool,
+    pub(crate) supports_pen_sounds: bool,
 }
 
 impl Capabilities {
@@ -28,18 +30,22 @@ impl Capabilities {
     pub(crate) const DESKTOP: Self = Self {
         can_print: true,
         supports_folder_picker: true,
+        supports_pen_sounds: true,
     };
-    /// Android: no print backend, and GTK's folder chooser is not usable there.
-    /// Folder access goes through the SAF/file seam instead.
+    /// Android: no print backend, GTK's folder chooser is not usable there, and
+    /// there is no audio backend for pen sounds. Folder access goes through the
+    /// SAF/file seam instead.
     pub(crate) const ANDROID: Self = Self {
         can_print: false,
         supports_folder_picker: false,
+        supports_pen_sounds: false,
     };
 
     pub(crate) fn supports(&self, feature: Feature) -> bool {
         match feature {
             Feature::Print => self.can_print,
             Feature::FolderPicker => self.supports_folder_picker,
+            Feature::PenSounds => self.supports_pen_sounds,
         }
     }
 }
@@ -154,6 +160,7 @@ mod tests {
         let caps = Capabilities {
             can_print: false,
             supports_folder_picker: false,
+            supports_pen_sounds: false,
         };
         let print = gio::SimpleAction::new("print-doc", None);
         let pick_folder = gio::SimpleAction::new("pick-folder", None);
@@ -181,8 +188,10 @@ mod tests {
     fn android_capabilities_match_the_spike_limits() {
         assert!(!Capabilities::ANDROID.supports(Feature::Print));
         assert!(!Capabilities::ANDROID.supports(Feature::FolderPicker));
+        assert!(!Capabilities::ANDROID.supports(Feature::PenSounds));
         assert!(Capabilities::DESKTOP.supports(Feature::Print));
         assert!(Capabilities::DESKTOP.supports(Feature::FolderPicker));
+        assert!(Capabilities::DESKTOP.supports(Feature::PenSounds));
     }
 
     #[test]
