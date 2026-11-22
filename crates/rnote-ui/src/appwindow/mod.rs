@@ -22,7 +22,6 @@ use rnote_engine::pens::PenStyle;
 use rnote_engine::pens::pensconfig::brushconfig::BrushStyle;
 use rnote_engine::pens::pensconfig::shaperconfig::ShaperStyle;
 use rnote_engine::{WidgetFlags, engine::EngineTask};
-use std::path::Path;
 use std::time::Duration;
 use tracing::{debug, error};
 
@@ -517,10 +516,7 @@ impl RnAppWindow {
             .any(|c| c.save_in_progress())
     }
 
-    pub(crate) fn tabs_query_file_opened(
-        &self,
-        input_file_path: impl AsRef<Path>,
-    ) -> Option<adw::TabPage> {
+    pub(crate) fn tabs_query_file_opened(&self, input_file: &gio::File) -> Option<adw::TabPage> {
         self.overlays()
             .tabview()
             .pages()
@@ -535,14 +531,10 @@ impl RnAppWindow {
                         .downcast_ref::<RnCanvasWrapper>()
                         .unwrap()
                         .canvas()
-                        .output_file()?
-                        .path()?,
+                        .output_file()?,
                 ))
             })
-            .find(|(_, output_file_path)| {
-                crate::utils::paths_abs_eq(output_file_path, input_file_path.as_ref())
-                    .unwrap_or(false)
-            })
+            .find(|(_, output_file)| crate::utils::files_eq(output_file, input_file))
             .map(|(found, _)| found)
     }
 
@@ -672,14 +664,10 @@ impl RnAppWindow {
     ) -> anyhow::Result<Option<RnCanvasWrapper>> {
         let file_imported = match FileType::lookup_file_type(&input_file) {
             FileType::RnoteFile => {
-                let input_file_path = input_file.path().ok_or_else(|| {
-                    anyhow::anyhow!("Could not open file '{input_file:?}', file path is None.")
-                })?;
-
                 // we grab focus
                 self.present();
                 // If the file is already opened in a tab, simply switch to it
-                if let Some(page) = self.tabs_query_file_opened(input_file_path) {
+                if let Some(page) = self.tabs_query_file_opened(&input_file) {
                     self.overlays().tabview().set_selected_page(&page);
                     None
                 } else {
@@ -702,7 +690,7 @@ impl RnAppWindow {
                     let (bytes, _) = input_file.load_bytes_future().await?;
                     let widget_flags = wrapper
                         .canvas()
-                        .load_in_rnote_bytes(bytes.to_vec(), input_file.path())
+                        .load_in_rnote_bytes(bytes.to_vec(), Some(input_file.clone()))
                         .await?;
                     if rnote_file_new_tab {
                         self.append_wrapper_new_tab(&wrapper);

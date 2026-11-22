@@ -203,13 +203,16 @@ pub(crate) async fn dialog_close_tab(appwindow: &RnAppWindow, tab_page: &adw::Ta
 
     let save_file_display_name = save_file
         .as_ref()
-        .and_then(|f| Some(f.path()?.file_stem()?.to_string_lossy().to_string()))
+        .and_then(|f| Some(f.basename()?.file_stem()?.to_string_lossy().to_string()))
         .unwrap_or_else(|| gettext("- invalid file name -"));
     let save_folder_display_name = save_file
         .as_ref()
         .and_then(|f| {
-            f.parent()
-                .and_then(|p| Some(p.path()?.display().to_string()))
+            f.parent().map(|p| {
+                p.path()
+                    .map(|path| path.display().to_string())
+                    .unwrap_or_else(|| p.uri().to_string())
+            })
         })
         .unwrap_or_else(|| gettext("- invalid save folder name -"));
 
@@ -336,13 +339,16 @@ pub(crate) async fn dialog_close_window(appwindow: &RnAppWindow) {
 
         let save_file_display_name = save_file
             .as_ref()
-            .and_then(|f| Some(f.path()?.file_stem()?.to_string_lossy().to_string()))
+            .and_then(|f| Some(f.basename()?.file_stem()?.to_string_lossy().to_string()))
             .unwrap_or_else(|| gettext("- invalid file name -"));
         let save_folder_display_name = save_file
             .as_ref()
             .and_then(|f| {
-                f.parent()
-                    .and_then(|p| Some(p.path()?.display().to_string()))
+                f.parent().map(|p| {
+                    p.path()
+                        .map(|path| path.display().to_string())
+                        .unwrap_or_else(|| p.uri().to_string())
+                })
             })
             .unwrap_or_else(|| gettext("- invalid save folder name -"));
 

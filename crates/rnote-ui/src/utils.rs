@@ -1,7 +1,5 @@
 // Imports
 use crate::FileType;
-use anyhow::Context;
-use futures::AsyncWriteExt;
 use gettextrs::pgettext;
 use gtk4::{gdk, gio, prelude::*};
 use palette::convert::IntoColor;
@@ -61,34 +59,29 @@ pub(crate) fn find_drafts() -> Vec<PathBuf> {
 }
 
 /// Create a new file or replace if it already exists, asynchronously.
+///
+/// Uses `gio::File`, so it works for local paths and URIs without requiring `file.path()`.
 pub(crate) async fn create_replace_file_future(
     bytes: Vec<u8>,
     file: &gio::File,
 ) -> anyhow::Result<()> {
-    let Some(file_path) = file.path() else {
-        return Err(anyhow::anyhow!(
-            "Can't create-replace file that has no path."
-        ));
-    };
-    let mut write_file = async_fs::OpenOptions::new()
-        .create(true)
-        .truncate(true)
-        .write(true)
-        .open(&file_path)
-        .await
-        .context(format!(
-            "Failed to create/open/truncate file for path '{}'",
-            file_path.display()
-        ))?;
-    write_file.write_all(&bytes).await.context(format!(
-        "Failed to write bytes to file with path '{}'",
-        file_path.display()
-    ))?;
-    write_file.sync_all().await.context(format!(
-        "Failed to sync file after writing with path '{}'",
-        file_path.display()
-    ))?;
+    file.replace_contents_future(
+        bytes,
+        None,
+        false,
+        gio::FileCreateFlags::REPLACE_DESTINATION,
+    )
+    .await
+    .map_err(|(_, err)| anyhow::anyhow!("Failed to write file `{file:?}`, Err: {err}"))?;
     Ok(())
+}
+
+/// Whether two [`gio::File`]s refer to the same document.
+///
+/// Compares the file identity GIO derives from the URI, so a local path and its
+/// `file://` URI match, and no `PathBuf` or `path()` is assumed.
+pub(crate) fn files_eq(first: &gio::File, second: &gio::File) -> bool {
+    first.equal(second)
 }
 
 pub(crate) fn str_from_u8_nul_utf8(utf8_src: &[u8]) -> Result<&str, std::str::Utf8Error> {
@@ -299,4 +292,45 @@ pub(crate) fn path_walk_up_until_exists(path: impl AsRef<Path>) -> anyhow::Resul
             .ok_or_else(|| anyhow::anyhow!("Path {} has no parent", path.display()))?;
     }
     Ok(path)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn files_eq_matches_path_and_uri_for_same_file() {
+        let path = std::env::temp_dir().join("rsnote-files-eq-doc.rnote");
+        let by_path = gio::File::for_path(&path);
+        let by_uri = gio::File::for_uri(&format!("file://{}", path.display()));
+
+        assert!(files_eq(&by_path, &by_uri));
+        assert!(files_eq(&by_uri, &by_path));
+    }
+
+    #[test]
+    fn files_eq_distinct_for_different_files() {
+        let by_path = gio::File::for_path(std::env::temp_dir().join("rsnote-files-eq-a.rnote"));
+        let by_uri = gio::File::for_uri("file:///tmp/rsnote-files-eq-b.rnote");
+
+        assert!(!files_eq(&by_path, &by_uri));
+    }
+
+    #[test]
+    fn create_replace_writes_and_reads_through_file_uri() {
+        let path =
+            std::env::temp_dir().join(format!("rsnote-write-{}.rnote", uuid::Uuid::new_v4()));
+        let file = gio::File::for_uri(&format!("file://{}", path.display()));
+        let contents = b"rnote test bytes".to_vec();
+
+        gtk4::glib::MainContext::default().block_on(async {
+            create_replace_file_future(contents.clone(), &file)
+                .await
+                .unwrap();
+            let (bytes, _) = file.load_bytes_future().await.unwrap();
+            assert_eq!(bytes.as_ref(), contents.as_slice());
+        });
+
+        std::fs::remove_file(&path).unwrap();
+    }
 }
