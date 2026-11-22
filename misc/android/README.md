@@ -217,6 +217,37 @@ Still requires a machine with the Android SDK, NDK and a device/emulator:
   `just android-app-logcat` showing `GSK_RENDERER=gl` and a GL renderer type;
 - `just android-app-device-check`.
 
+### Lifecycle, autosave and draft recovery (ticket #10)
+
+GTK's Android activity exposes no pause/stop callback. The activity's window
+loses focus when it pauses, so `platform::watch_lifecycle()` turns "no app
+window is focused" into the pause hook. The pause handler saves every unsaved
+tab: documents with an output file are written back, the rest become drafts
+under the app cache (`<app cache>/rnote/drafts`). Rotation does not recreate the
+activity (pixiewood's manifest sets `configChanges` for orientation and screen
+size), so the document and view stay in memory. Desktop never triggers the hook,
+so its behaviour is unchanged.
+
+Android sets no `XDG_CACHE_HOME`, and `HOME` is not usable, so `env.rs` derives
+the app cache as the sibling of the internal `files` dir that GTK exposes in
+`XDG_DATA_DIRS`.
+
+Verified without a device:
+
+- unit tests for the pause/resume edge logic and the Android cache path
+  derivation;
+- `cargo check -p rnote --all-targets` on desktop and
+  `cargo check -p rnote --target aarch64-linux-android --bin rnote`.
+
+Device verification still required:
+
+1. Draw, press Home before the autosave interval elapses,
+   `adb shell am kill com.github.flxzt.rnote`, relaunch: the recovery dialog
+   offers the draft.
+2. Repeat pause/kill/restore ten times: each draft opens with all strokes.
+3. Rotate while editing: same document and view, no recovery dialog.
+4. Background with a saved document open: the file is rewritten on pause.
+
 Known device-time gaps, deliberately not solved in ticket #6:
 
 - The pinned GTK wrap builds gdk-pixbuf without the librsvg SVG loader, so the
@@ -226,8 +257,8 @@ Known device-time gaps, deliberately not solved in ticket #6:
   selection is best effort (`LANGUAGE`/`LC_*`/`LANG`, then GLib's language
   list). Translations are packaged and the reader works when a locale is
   selected.
-- Stylus pressure, SAF file access, lifecycle/autosave, IME, and the rest of the
-  spike are later tickets (#7+), not part of this build wiring.
+- Stylus pressure, SAF file access, IME, and the rest of the spike are later
+  tickets (#7+), not part of this build wiring.
 
 CI for the APK and fuller device-check tooling is ticket #7; this directory
 deliberately adds no workflow.

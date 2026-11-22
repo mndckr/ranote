@@ -7,6 +7,11 @@
 
 use gtk4::gio;
 use gtk4::gio::prelude::*;
+#[cfg(target_os = "android")]
+use gtk4::glib;
+#[cfg(target_os = "android")]
+use gtk4::prelude::*;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Mutex, OnceLock};
 
 /// A feature whose availability differs between platforms.
@@ -149,6 +154,63 @@ pub(crate) fn notify_resumed() {
     run_handlers(resume_handlers());
 }
 
+/// Android's activity reports window focus, not pause/stop. The app has no
+/// focused window exactly while the activity is paused.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(not(any(target_os = "android", test)), allow(dead_code))]
+enum Lifecycle {
+    Paused,
+    Resumed,
+}
+
+#[cfg_attr(not(any(target_os = "android", test)), allow(dead_code))]
+fn lifecycle_transition(was_paused: bool, any_window_active: bool) -> Option<Lifecycle> {
+    match (was_paused, any_window_active) {
+        (false, false) => Some(Lifecycle::Paused),
+        (true, true) => Some(Lifecycle::Resumed),
+        _ => None,
+    }
+}
+
+#[cfg_attr(not(target_os = "android"), allow(dead_code))]
+static LIFECYCLE_PAUSED: AtomicBool = AtomicBool::new(false);
+
+/// Turn the current focus state into pause/resume notifications, once per change.
+#[cfg_attr(not(target_os = "android"), allow(dead_code))]
+fn apply_lifecycle(any_window_active: bool) {
+    let was_paused = LIFECYCLE_PAUSED.swap(!any_window_active, Ordering::SeqCst);
+    match lifecycle_transition(was_paused, any_window_active) {
+        Some(Lifecycle::Paused) => notify_paused(),
+        Some(Lifecycle::Resumed) => notify_resumed(),
+        None => {}
+    }
+}
+
+/// Watch a window's focus transitions on Android and translate them into
+/// pause/resume notifications. GTK never reports pause itself, but losing the
+/// activity's window focus is what pause does on Android. Desktop windows also
+/// lose focus, so there this is a no-op and behaviour is unchanged.
+#[cfg(target_os = "android")]
+pub(crate) fn watch_lifecycle(window: &gtk4::Window) {
+    window.connect_notify_local(Some("is-active"), |window, _| {
+        let Some(application) = window.application() else {
+            return;
+        };
+        // Defer one main-loop iteration: a closing window is gone by then, so
+        // closing does not count as a pause.
+        glib::idle_add_local_once(move || {
+            let windows = application.windows();
+            if windows.is_empty() {
+                return;
+            }
+            apply_lifecycle(windows.iter().any(|window| window.is_active()));
+        });
+    });
+}
+
+#[cfg(not(target_os = "android"))]
+pub(crate) fn watch_lifecycle(_window: &gtk4::Window) {}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -202,6 +264,14 @@ mod tests {
 
         assert_eq!(take_launch_file().map(|f| f.uri()), Some(file.uri()));
         assert!(take_launch_file().is_none());
+    }
+
+    #[test]
+    fn lifecycle_transitions_only_when_the_pause_state_changes() {
+        assert_eq!(lifecycle_transition(false, false), Some(Lifecycle::Paused));
+        assert_eq!(lifecycle_transition(true, false), None);
+        assert_eq!(lifecycle_transition(true, true), Some(Lifecycle::Resumed));
+        assert_eq!(lifecycle_transition(false, true), None);
     }
 
     #[test]
