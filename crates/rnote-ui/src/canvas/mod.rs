@@ -31,6 +31,7 @@ use rnote_engine::ext::GraphenePointExt;
 use rnote_engine::ext::GrapheneRectExt;
 use rnote_engine::{Engine, WidgetFlags};
 use std::cell::{Cell, Ref, RefCell, RefMut};
+use std::collections::HashSet;
 use std::path::Path;
 use std::time::Duration;
 use tracing::{debug, error, warn};
@@ -94,6 +95,7 @@ mod imp {
         pub(crate) unsaved_changes: Cell<bool>,
         pub(crate) empty: Cell<bool>,
         pub(crate) touch_drawing: Cell<bool>,
+        pub(crate) active_touches: RefCell<HashSet<gdk::EventSequence>>,
         pub(crate) show_drawing_cursor: Cell<bool>,
         pub(crate) text_input_enabled: Cell<bool>,
 
@@ -194,6 +196,7 @@ mod imp {
                 unsaved_changes: Cell::new(false),
                 empty: Cell::new(true),
                 touch_drawing: Cell::new(false),
+                active_touches: RefCell::new(HashSet::new()),
                 show_drawing_cursor: Cell::new(false),
                 text_input_enabled: Cell::new(false),
 
@@ -860,6 +863,30 @@ impl RnCanvas {
         }
     }
 
+    /// Updates the active touch sequences and returns how many fingers are down.
+    ///
+    /// `GdkDevice::num-touches` is the maximum number of concurrent touches, not
+    /// the current count, and is 0 on Android, so touch sequences are tracked here.
+    pub(crate) fn track_touch_event(&self, event: &gdk::Event) -> u32 {
+        let mut active_touches = self.imp().active_touches.borrow_mut();
+
+        match event.event_type() {
+            gdk::EventType::TouchBegin => {
+                active_touches.insert(event.event_sequence());
+            }
+            gdk::EventType::TouchEnd | gdk::EventType::TouchCancel => {
+                active_touches.remove(&event.event_sequence());
+            }
+            _ => {}
+        }
+
+        active_touches.len() as u32
+    }
+
+    pub(crate) fn active_touches(&self) -> u32 {
+        self.imp().active_touches.borrow().len() as u32
+    }
+
     #[allow(unused)]
     pub(crate) fn show_drawing_cursor(&self) -> bool {
         self.property::<bool>("show-drawing-cursor")
@@ -1068,12 +1095,7 @@ impl RnCanvas {
     pub(crate) fn doc_folderpath_display(&self) -> String {
         self.output_file()
             .map(|f| {
-                f.parent()
-                    .map(|p| {
-                        p.path()
-                            .map(|p| p.display().to_string())
-                            .unwrap_or_else(|| p.uri().to_string())
-                    })
+                crate::utils::folder_display(&f)
                     .unwrap_or_else(|| gettext("- invalid folder path -"))
             })
             .unwrap_or_else(|| OUTPUT_FILE_NEW_SUBTITLE.to_string())
@@ -1248,8 +1270,9 @@ impl RnCanvas {
             appwindow,
             async move {
                 let (tx, mut rx) = futures::channel::mpsc::unbounded();
-                let Some(file_path) = file.path() else {
-                    warn!("Can't create watcher for file that has no path");
+                let Some(file_path) = crate::utils::local_watch_path(&file) else {
+                    // Content URIs (Android SAF) have no filesystem path to watch.
+                    debug!("Not watching output file without a local path: `{file:?}`");
                     return;
                 };
                 let Some(parent_path) = file_path.parent() else {

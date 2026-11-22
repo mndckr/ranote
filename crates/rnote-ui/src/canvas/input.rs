@@ -38,23 +38,25 @@ pub(crate) fn handle_pointer_controller_event(
     //std::thread::sleep(std::time::Duration::from_millis(100));
     //super::input::debug_gdk_event(event);
 
-    if reject_pointer_input(event, touch_drawing) {
+    let num_touches = canvas.track_touch_event(event);
+
+    if reject_pointer_input(event, touch_drawing, num_touches) {
         return (glib::Propagation::Proceed, pen_state, stylus_active);
     }
 
     // GTK can deliver mouse motion events while a stylus is hovering or drawing.
     // They must not reuse the stylus state, otherwise the pen position jumps to
     // the last mouse position and generates an unwanted pen event.
-    if is_stylus {
-        stylus_active = gdk_event_type != gdk::EventType::ProximityOut;
-    } else if stylus_active {
-        // A deliberate mouse click hands control back to the mouse.
-        match gdk_event_type {
-            gdk::EventType::ButtonPress | gdk::EventType::ButtonRelease => {
-                stylus_active = false;
-            }
-            _ => return (glib::Propagation::Proceed, pen_state, stylus_active),
-        }
+    let (new_stylus_active, ignore_event) = update_stylus_active(
+        is_stylus,
+        gdk_event_type,
+        pen_state,
+        stylus_active,
+        cfg!(target_os = "android"),
+    );
+    stylus_active = new_stylus_active;
+    if ignore_event {
+        return (glib::Propagation::Proceed, pen_state, stylus_active);
     }
 
     let mut handle_pen_event = false;
@@ -334,24 +336,85 @@ fn trace_gdk_event(event: &gdk::Event) {
     );
 }
 
-/// Returns true if input should be rejected
-pub(crate) fn reject_pointer_input(event: &gdk::Event, touch_drawing: bool) -> bool {
+fn is_touch_event(event_type: gdk::EventType) -> bool {
+    matches!(
+        event_type,
+        gdk::EventType::TouchBegin
+            | gdk::EventType::TouchUpdate
+            | gdk::EventType::TouchEnd
+            | gdk::EventType::TouchCancel
+    )
+}
+
+/// Whether an event must be rejected before it reaches the pen handling.
+fn reject_pointer_input_kind(
+    touch_drawing: bool,
+    is_pointer_emulated: bool,
+    event_type: gdk::EventType,
+    num_touches: u32,
+) -> bool {
     if touch_drawing {
-        if event.device().unwrap().num_touches() > 1 {
-            return true;
-        }
+        // Two or more fingers are a pan/zoom gesture, not a stroke.
+        num_touches > 1
     } else {
-        let event_type = event.event_type();
-        if event.is_pointer_emulated()
-            || event_type == gdk::EventType::TouchBegin
-            || event_type == gdk::EventType::TouchUpdate
-            || event_type == gdk::EventType::TouchEnd
-            || event_type == gdk::EventType::TouchCancel
-        {
-            return true;
+        is_pointer_emulated || is_touch_event(event_type)
+    }
+}
+
+/// Returns true if input should be rejected
+pub(crate) fn reject_pointer_input(
+    event: &gdk::Event,
+    touch_drawing: bool,
+    num_touches: u32,
+) -> bool {
+    reject_pointer_input_kind(
+        touch_drawing,
+        event.is_pointer_emulated(),
+        event.event_type(),
+        num_touches,
+    )
+}
+
+/// Tracks which device owns the pointer and whether this event must be ignored.
+///
+/// Returns the stylus state for the next event and whether the current event
+/// belongs to a device the stylus currently owns.
+fn update_stylus_active(
+    is_stylus: bool,
+    event_type: gdk::EventType,
+    pen_state: PenState,
+    stylus_active: bool,
+    clear_on_touch: bool,
+) -> (bool, bool) {
+    if is_stylus {
+        return (event_type != gdk::EventType::ProximityOut, false);
+    }
+
+    if is_touch_event(event_type) {
+        // A touch while a stylus stroke is in progress is a palm, not a stroke.
+        if stylus_active && pen_state == PenState::Down {
+            return (stylus_active, true);
+        }
+
+        // Android never sends ProximityOut, so a touch is the only signal that
+        // the stylus no longer owns the pointer. Without this, the first stylus
+        // hover would swallow all later touch input.
+        if clear_on_touch {
+            return (false, false);
         }
     }
-    false
+
+    if stylus_active {
+        // A deliberate mouse click hands control back to the mouse.
+        match event_type {
+            gdk::EventType::ButtonPress | gdk::EventType::ButtonRelease => {
+                return (false, false);
+            }
+            _ => return (stylus_active, true),
+        }
+    }
+
+    (stylus_active, false)
 }
 
 fn event_is_stylus(event: &gdk::Event) -> bool {
@@ -429,11 +492,10 @@ fn retrieve_pointer_elements(
                 axes[crate::utils::axis_use_idx(gdk::AxisUse::X)],
                 axes[crate::utils::axis_use_idx(gdk::AxisUse::Y)],
             ));
-            let pressure = if is_stylus {
-                axes[crate::utils::axis_use_idx(gdk::AxisUse::Pressure)]
-            } else {
-                Element::PRESSURE_DEFAULT
-            };
+            let pressure = element_pressure(
+                is_stylus,
+                Some(axes[crate::utils::axis_use_idx(gdk::AxisUse::Pressure)]),
+            );
 
             entries.push((Element::new(pos, pressure), entry_time));
         }
@@ -445,15 +507,25 @@ fn retrieve_pointer_elements(
         .position()
         .map(|(x, y)| transform_pos(Vector2::new(x, y)))?;
 
-    let pressure = if is_stylus {
-        event.axis(gdk::AxisUse::Pressure).unwrap()
-    } else {
-        Element::PRESSURE_DEFAULT
-    };
+    let pressure = element_pressure(is_stylus, event.axis(gdk::AxisUse::Pressure));
 
     elements.push((Element::new(pos, pressure), now));
 
     Some(elements)
+}
+
+/// Pressure for a pointer element.
+///
+/// Only stylus input carries real pressure; other input uses the engine
+/// default. A stylus event without a pressure axis also falls back to that
+/// default instead of panicking: the missing axis is a backend gap to record,
+/// not a value to invent.
+fn element_pressure(is_stylus: bool, pressure_axis: Option<f64>) -> f64 {
+    if is_stylus {
+        pressure_axis.unwrap_or(Element::PRESSURE_DEFAULT)
+    } else {
+        Element::PRESSURE_DEFAULT
+    }
 }
 
 pub(crate) fn retrieve_button_shortcut_key(
@@ -485,13 +557,16 @@ pub(crate) fn retrieve_modifier_keys(modifier: gdk::ModifierType) -> HashSet<Mod
     keys
 }
 
-fn retrieve_pen_mode(event: &gdk::Event) -> Option<PenMode> {
-    let device_tool = event.device_tool()?;
-    match device_tool.tool_type() {
+fn pen_mode_from_tool_type(tool_type: gdk::DeviceToolType) -> Option<PenMode> {
+    match tool_type {
         gdk::DeviceToolType::Pen => Some(PenMode::Pen),
         gdk::DeviceToolType::Eraser => Some(PenMode::Eraser),
         _ => None,
     }
+}
+
+fn retrieve_pen_mode(event: &gdk::Event) -> Option<PenMode> {
+    pen_mode_from_tool_type(event.device_tool()?.tool_type())
 }
 
 pub(crate) fn retrieve_keyboard_shortcut_key(
@@ -541,6 +616,182 @@ pub(crate) fn retrieve_keyboard_key(gdk_key: gdk::Key) -> KeyboardKey {
             gdk::Key::End => KeyboardKey::End,
             gdk::Key::KP_End => KeyboardKey::End,
             _ => KeyboardKey::Unsupported,
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn stylus_buttons_map_to_pen_shortcuts() {
+        assert_eq!(
+            retrieve_button_shortcut_key(gdk::BUTTON_PRIMARY, true),
+            None
+        );
+        assert_eq!(
+            retrieve_button_shortcut_key(gdk::BUTTON_SECONDARY, true),
+            Some(ShortcutKey::StylusPrimaryButton)
+        );
+        assert_eq!(
+            retrieve_button_shortcut_key(gdk::BUTTON_MIDDLE, true),
+            Some(ShortcutKey::StylusSecondaryButton)
+        );
+        assert_eq!(
+            retrieve_button_shortcut_key(gdk::BUTTON_SECONDARY, false),
+            Some(ShortcutKey::MouseSecondaryButton)
+        );
+        assert_eq!(
+            retrieve_button_shortcut_key(gdk::BUTTON_MIDDLE, false),
+            None
+        );
+    }
+
+    #[test]
+    fn device_tool_selects_pen_or_eraser() {
+        assert_eq!(
+            pen_mode_from_tool_type(gdk::DeviceToolType::Pen),
+            Some(PenMode::Pen)
+        );
+        assert_eq!(
+            pen_mode_from_tool_type(gdk::DeviceToolType::Eraser),
+            Some(PenMode::Eraser)
+        );
+        assert_eq!(pen_mode_from_tool_type(gdk::DeviceToolType::Mouse), None);
+        assert_eq!(pen_mode_from_tool_type(gdk::DeviceToolType::Unknown), None);
+    }
+
+    #[test]
+    fn pressure_is_only_taken_from_stylus_input() {
+        assert_eq!(
+            element_pressure(false, Some(0.83)),
+            Element::PRESSURE_DEFAULT
+        );
+        assert_eq!(element_pressure(true, Some(0.0)), 0.0);
+        assert_eq!(element_pressure(true, Some(0.42)), 0.42);
+        assert_eq!(element_pressure(true, Some(1.0)), 1.0);
+        assert_eq!(element_pressure(true, None), Element::PRESSURE_DEFAULT);
+    }
+
+    #[test]
+    fn touch_needs_touch_drawing_and_one_finger() {
+        for event_type in [
+            gdk::EventType::TouchBegin,
+            gdk::EventType::TouchUpdate,
+            gdk::EventType::TouchEnd,
+            gdk::EventType::TouchCancel,
+        ] {
+            assert!(reject_pointer_input_kind(false, false, event_type, 1));
+            assert!(!reject_pointer_input_kind(true, false, event_type, 1));
+            assert!(reject_pointer_input_kind(true, false, event_type, 2));
+        }
+        assert!(!reject_pointer_input_kind(
+            true,
+            false,
+            gdk::EventType::MotionNotify,
+            0
+        ));
+
+        assert!(reject_pointer_input_kind(
+            false,
+            true,
+            gdk::EventType::MotionNotify,
+            0
+        ));
+        assert!(!reject_pointer_input_kind(
+            false,
+            false,
+            gdk::EventType::MotionNotify,
+            0
+        ));
+        assert!(!reject_pointer_input_kind(
+            false,
+            false,
+            gdk::EventType::ButtonPress,
+            0
+        ));
+    }
+
+    #[test]
+    fn stylus_owns_the_pointer_until_it_leaves() {
+        // Stylus motion and presses keep the stylus active.
+        assert_eq!(
+            update_stylus_active(
+                true,
+                gdk::EventType::MotionNotify,
+                PenState::Proximity,
+                false,
+                true
+            ),
+            (true, false)
+        );
+        assert_eq!(
+            update_stylus_active(true, gdk::EventType::ButtonPress, PenState::Up, false, true),
+            (true, false)
+        );
+        // Proximity out releases it.
+        assert_eq!(
+            update_stylus_active(true, gdk::EventType::ProximityOut, PenState::Up, true, true),
+            (false, false)
+        );
+        // Mouse motion is ignored while the stylus owns the pointer ...
+        assert_eq!(
+            update_stylus_active(
+                false,
+                gdk::EventType::MotionNotify,
+                PenState::Proximity,
+                true,
+                true
+            ),
+            (true, true)
+        );
+        // ... and a mouse click hands control back.
+        assert_eq!(
+            update_stylus_active(false, gdk::EventType::ButtonPress, PenState::Up, true, true),
+            (false, false)
+        );
+        // Plain mouse input is unaffected.
+        assert_eq!(
+            update_stylus_active(
+                false,
+                gdk::EventType::MotionNotify,
+                PenState::Up,
+                false,
+                true
+            ),
+            (false, false)
+        );
+    }
+
+    #[test]
+    fn touch_clears_a_stuck_stylus_on_android() {
+        // Android never sends ProximityOut: after the pen lifts, the first
+        // touch must hand the pointer back instead of being swallowed forever.
+        assert_eq!(
+            update_stylus_active(false, gdk::EventType::TouchBegin, PenState::Up, true, true),
+            (false, false)
+        );
+        // Desktop keeps the previous behaviour (stylus still in proximity).
+        assert_eq!(
+            update_stylus_active(false, gdk::EventType::TouchBegin, PenState::Up, true, false),
+            (true, true)
+        );
+    }
+
+    #[test]
+    fn palm_touch_during_a_stroke_is_ignored() {
+        for clear_on_touch in [true, false] {
+            assert_eq!(
+                update_stylus_active(
+                    false,
+                    gdk::EventType::TouchBegin,
+                    PenState::Down,
+                    true,
+                    clear_on_touch
+                ),
+                (true, true)
+            );
         }
     }
 }
