@@ -17,3 +17,5 @@ Single-context: root `GLOSSARY.md` + `docs/adr/` when they exist. See `docs/agen
 ### Live poking
 
 Drive the running GTK app (actions, settings, colours, drawing) with `docs/agents/rnote_poke.py`. See `docs/agents/live-poking.md`.
+
+Debug Android-only bugs on a real device over adb (build/install/logcat/synthetic input). See `docs/agents/android-debugging.md`.
