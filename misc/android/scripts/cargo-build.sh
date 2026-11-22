@@ -18,6 +18,10 @@ build_root=$2
 rust_target=$3
 profile=$4
 output=$5
+# Meson passes a build-root-relative path but this script cd's to the repo
+# root, and pixiewood builds both ABIs in parallel: absolutise so they cannot
+# race on the same file.
+output=$(realpath -m "$output")
 cc=$6
 cxx=$7
 cargo=$8
@@ -83,7 +87,8 @@ install -m 0755 "$build_root/cargo-target/$rust_target/$profile/rnote" "$output"
 # than crash on device if a linker change drops the export.
 llvm_nm=$toolchain_bin/llvm-nm
 if [ -x "$llvm_nm" ]; then
-  "$llvm_nm" -D "$output" | grep -qE ' [TW] main$' ||
+  # grep without -q: with pipefail, -q exits early and SIGPIPEs llvm-nm.
+  "$llvm_nm" -D "$output" | grep -E ' [TW] main$' >/dev/null ||
     {
       echo "error: $output does not export main for GTK's Android entrypoint" >&2
       exit 1
