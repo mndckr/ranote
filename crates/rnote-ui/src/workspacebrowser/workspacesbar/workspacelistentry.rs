@@ -2,7 +2,7 @@
 use self::imp::RnWorkspaceListEntryInner;
 use gtk4::prelude::*;
 use gtk4::subclass::prelude::*;
-use gtk4::{gdk, glib};
+use gtk4::{gdk, gio, glib};
 use once_cell::sync::Lazy;
 use rnote_compose::color;
 use rnote_engine::ext::GdkRGBAExt;
@@ -15,8 +15,9 @@ mod imp {
     #[derive(Debug, Clone, glib::Variant, serde::Serialize, serde::Deserialize)]
     #[serde(default, rename = "workspacelistentryinner")]
     pub(crate) struct RnWorkspaceListEntryInner {
+        /// A local path or a URI (`file://`, `content://`, ...).
         #[serde(rename = "dir")]
-        pub(crate) dir: PathBuf,
+        pub(crate) dir: String,
         #[serde(rename = "icon")]
         pub(crate) icon: String,
         #[serde(rename = "color")]
@@ -35,7 +36,7 @@ mod imp {
                 }
             });
             Self {
-                dir,
+                dir: dir.to_string_lossy().to_string(),
                 icon: String::from("workspacelistentryicon-folder-symbolic"),
                 color: super::RnWorkspaceListEntry::COLOR_DEFAULT.as_rgba_u32(),
                 name: String::from("default"),
@@ -80,7 +81,7 @@ mod imp {
                         .get::<String>()
                         .expect("The value needs to be of type `String`");
 
-                    self.inner.borrow_mut().dir = PathBuf::from(dir);
+                    self.inner.borrow_mut().dir = dir;
                 }
                 "icon" => {
                     let icon = value.get::<String>().expect("value not of type `String`");
@@ -102,13 +103,7 @@ mod imp {
 
         fn property(&self, _id: usize, pspec: &glib::ParamSpec) -> glib::Value {
             match pspec.name() {
-                "dir" => self
-                    .inner
-                    .borrow()
-                    .dir
-                    .to_string_lossy()
-                    .to_string()
-                    .to_value(),
+                "dir" => self.inner.borrow().dir.to_value(),
                 "icon" => self.inner.borrow().icon.to_value(),
                 "color" => gdk::RGBA::from_compose_color(rnote_compose::Color::from(
                     self.inner.borrow().color,
@@ -136,7 +131,7 @@ impl RnWorkspaceListEntry {
 
     pub(crate) fn new(inner: RnWorkspaceListEntryInner) -> Self {
         glib::Object::builder()
-            .property("dir", inner.dir.to_string_lossy().to_string().to_value())
+            .property("dir", inner.dir.to_value())
             .property("icon", inner.icon.to_value())
             .property(
                 "color",
@@ -159,6 +154,10 @@ impl RnWorkspaceListEntry {
 
     pub(crate) fn set_dir(&self, dir: String) {
         self.set_property("dir", dir.to_value());
+    }
+
+    pub(crate) fn dir_file(&self) -> gio::File {
+        crate::utils::file_for_dir_str(&self.dir())
     }
 
     pub(crate) fn icon(&self) -> String {
@@ -185,9 +184,14 @@ impl RnWorkspaceListEntry {
         self.set_property("name", name.to_value());
     }
 
+    /// Move a missing local directory to its closest existing parent.
+    /// Non-local URIs can't be walked up and are left unchanged.
     pub(crate) fn ensure_dir(&self) -> anyhow::Result<()> {
-        let p = crate::utils::path_walk_up_until_exists(self.dir())?;
-        self.set_dir(p.to_string_lossy().to_string());
+        let file = self.dir_file();
+        if let Some(path) = file.path() {
+            let p = crate::utils::path_walk_up_until_exists(path)?;
+            self.set_dir(p.to_string_lossy().to_string());
+        }
         Ok(())
     }
 }
@@ -209,5 +213,35 @@ impl glib::variant::ToVariant for RnWorkspaceListEntry {
 impl glib::variant::FromVariant for RnWorkspaceListEntry {
     fn from_variant(variant: &glib::Variant) -> Option<Self> {
         Some(Self::new(RnWorkspaceListEntryInner::from_variant(variant)?))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn ensure_dir_walks_up_missing_local_paths() {
+        let missing = std::env::temp_dir()
+            .join(format!("rsnote-missing-{}", uuid::Uuid::new_v4()))
+            .join("a")
+            .join("b");
+        let entry = RnWorkspaceListEntry::default();
+        entry.set_dir(missing.to_string_lossy().to_string());
+
+        entry.ensure_dir().unwrap();
+
+        assert_eq!(entry.dir(), std::env::temp_dir().to_string_lossy());
+    }
+
+    #[test]
+    fn ensure_dir_leaves_nonlocal_uris_unchanged() {
+        let entry = RnWorkspaceListEntry::default();
+        let uri = "content://com.example.documents/tree/missing";
+        entry.set_dir(uri.to_string());
+
+        entry.ensure_dir().unwrap();
+
+        assert_eq!(entry.dir(), uri);
     }
 }

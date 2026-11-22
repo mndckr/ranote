@@ -15,17 +15,23 @@ pub(crate) fn open_folder(
         #[weak]
         appwindow,
         move |_, _| {
-        if let Some(parent_path) = workspacebrowser.dir_list_file().and_then(|f| f.path()) {
-            if let Err(e) = platform::open_external(&gio::File::for_path(&parent_path)) {
-                let path_string =   &parent_path.into_os_string().into_string().ok().unwrap_or(String::from("Failed to get the path of the workspace folder"));
-                tracing::error!("Opening the parent folder '{path_string}' in the file manager failed, Err: {e:?}");
-                appwindow.overlays().dispatch_toast_error(&gettext("Failed to open the file in the file manager"));
+            if let Some(folder) = workspacebrowser.dir_list_file() {
+                if let Err(e) = platform::open_external(&folder) {
+                    tracing::error!(
+                        "Opening the workspace folder '{}' in the file manager failed, Err: {e:?}",
+                        folder.uri()
+                    );
+                    appwindow.overlays().dispatch_toast_error(&gettext(
+                        "Failed to open the file in the file manager",
+                    ));
+                }
+            } else {
+                tracing::warn!("No workspace folder selected");
+                appwindow
+                    .overlays()
+                    .dispatch_toast_error(&gettext("Failed to open the file in the file manager"));
             }
-        } else {
-            tracing::warn!("No path found");
-            appwindow.overlays().dispatch_toast_error(&gettext("Failed to open the file in the file manager"));
         }
-    }
     ));
 
     open_folder_action
