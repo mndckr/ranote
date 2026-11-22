@@ -95,3 +95,8 @@ if [ -x "$llvm_nm" ]; then
       exit 1
     }
 fi
+
+# The debug profile carries ~500 MB of DWARF per ABI, and Gradle cannot strip
+# this library ("Unable to strip ... packaging them as they are"). Strip the
+# packaged copy; the unstripped binary stays in cargo-target for symbolizing.
+"$toolchain_bin/llvm-strip" --strip-unneeded "$output"
