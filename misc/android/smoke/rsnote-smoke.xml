@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Pixiewood manifest: https://github.com/sp1ritCS/gtk-android-builder
+
+  Run from this directory (misc/android/smoke) via scripts/setup.sh.
+  Revisions are pinned so a clean checkout fetches the same sources.
+-->
+<app xmlns="https://sp1rit.arpa/pixiewood/" xmlns:xi="http://www.w3.org/2001/XInclude">
+  <metainfo vercalc="sem121010">
+    <xi:include href="src://org.rsnote.Smoke.metainfo.xml" parse="xml"/>
+  </metainfo>
+  <style>
+    <theme name="adw"/>
+    <icon type="generate">
+      <drawable target="foreground" type="avd" path="src://icons/ic-launcher-foreground.xml"/>
+      <color target="background">#1c1c1c</color>
+    </icon>
+  </style>
+  <dependencies>
+    <glib revision="802d1893cd5f4928991b5295263f1700311a3490">
+      <patch>hack</patch>
+    </glib>
+    <cairo/>
+    <fontconfig/>
+    <gtk revision="bd25f1e2dc2c2fbf3b8864e61afe642910ba359c"/>
+    <libadwaita revision="dfc1d654639d3160c3689597274cb537f164c25d"/>
+  </dependencies>
+  <build target="rsnote-smoke">
+    <architectures>
+      <arch>aarch64</arch>
+      <arch>x86_64</arch>
+    </architectures>
+  </build>
+</app>
