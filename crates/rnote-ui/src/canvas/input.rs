@@ -40,6 +40,13 @@ pub(crate) fn handle_pointer_controller_event(
 
     let num_touches = canvas.track_touch_event(event);
 
+    // Stylus latency is deferred to the stylus ticket; only touch is sampled.
+    // Recorded before the reject check so pan/zoom touch events, which the
+    // canvas rejects, still get an input-to-pixel sample.
+    if !is_stylus {
+        crate::perf::record_input();
+    }
+
     if reject_pointer_input(event, touch_drawing, num_touches) {
         return (glib::Propagation::Proceed, pen_state, stylus_active);
     }

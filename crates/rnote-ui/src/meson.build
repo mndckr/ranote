@@ -70,6 +70,7 @@ rnote_ui_sources = files(
     'mainheader.rs',
     'overlays.rs',
     'penpicker.rs',
+    'perf.rs',
     'penssidebar/brushpage.rs',
     'penssidebar/eraserpage.rs',
     'penssidebar/mod.rs',
