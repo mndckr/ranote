@@ -14,6 +14,8 @@ pub(crate) mod boxed;
 pub(crate) mod canvas;
 pub(crate) mod canvasmenu;
 pub(crate) mod canvaswrapper;
+#[cfg(any(target_os = "android", test))]
+pub(crate) mod clipboard;
 pub(crate) mod colorpicker;
 pub(crate) mod config;
 pub(crate) mod contextmenu;

@@ -1,6 +1,6 @@
 // Imports
 use super::RnCanvas;
-use gtk4::{Native, gdk, glib, graphene, prelude::*};
+use gtk4::{IMMulticontext, Native, gdk, glib, graphene, prelude::*};
 use p2d::math::Vector2;
 use rnote_compose::penevent::{KeyboardKey, ModifierKey, PenEvent, PenState, ShortcutKey};
 use rnote_compose::penpath::Element;
@@ -312,6 +312,18 @@ pub(crate) fn handle_imcontext_text_commit(canvas: &RnCanvas, text: &str) {
         None,
         now,
     );
+    canvas.emit_handle_widget_flags(widget_flags);
+}
+
+/// Shows the IME composition on the canvas.
+///
+/// Only wired on Android, where the system IME does not draw its own composition;
+/// the composition is never inserted into the document, only committed text is.
+pub(crate) fn handle_imcontext_preedit_changed(canvas: &RnCanvas, im_context: &IMMulticontext) {
+    let (preedit, _attrs, _cursor_pos) = im_context.preedit_string();
+    let preedit = (!preedit.is_empty()).then(|| preedit.to_string());
+
+    let widget_flags = canvas.engine_mut().set_ime_preedit(preedit);
     canvas.emit_handle_widget_flags(widget_flags);
 }
 
