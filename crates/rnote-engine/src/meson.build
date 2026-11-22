@@ -1,6 +1,7 @@
 # Specify sources
 rnote_engine_sources = files(
     'audioplayer.rs',
+    'audioplayer_silent.rs',
     'camera.rs',
     'document/background.rs',
     'document/config.rs',
