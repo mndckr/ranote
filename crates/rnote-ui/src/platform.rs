@@ -80,6 +80,7 @@ pub(crate) fn app_draws_ime_preedit() -> bool {
 /// `system_prefers_dark` is the OS night-mode preference, or `None` when the
 /// platform does not expose one (desktop). Android's libadwaita integration
 /// does not see the Android night mode, so the platform module feeds it in.
+#[cfg_attr(not(any(target_os = "android", test)), allow(dead_code))]
 pub(crate) fn resolve_system_color_scheme(
     requested: &str,
     system_prefers_dark: Option<bool>,
