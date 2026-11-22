@@ -153,10 +153,16 @@ pub(crate) fn file_for_dir_str(dir: &str) -> gio::File {
 }
 
 /// The stable identity used to store a workspace directory: its local path, or its URI when it has none.
+///
+/// Android content files report the URI path from `path()`, which is not a
+/// filesystem path, so only native files are stored as paths.
 pub(crate) fn file_dir_identity(file: &gio::File) -> String {
-    file.path()
-        .map(|p| p.to_string_lossy().to_string())
-        .unwrap_or_else(|| file.uri().to_string())
+    if file.is_native()
+        && let Some(path) = file.path()
+    {
+        return path.to_string_lossy().to_string();
+    }
+    file.uri().to_string()
 }
 
 /// Find a non-existing `.rnote` file in `folder` named after `base_title`,
