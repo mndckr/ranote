@@ -264,8 +264,7 @@ impl Svg {
     pub fn draw_to_cairo(&self, cx: &cairo::Context) -> anyhow::Result<()> {
         let width = self.bounds.extents()[0].ceil().max(1.0) as u32;
         let height = self.bounds.extents()[1].ceil().max(1.0) as u32;
-        let pixmap =
-            render_svg_to_pixmap(&self.to_document(), width, height, self.bounds.mins, 1.0)?;
+        let pixmap = render_svg_to_pixmap(&self.to_document(), width, height, 1.0)?;
 
         let mut surface =
             cairo::ImageSurface::create(cairo::Format::ARgb32, width as i32, height as i32)?;
@@ -282,13 +281,7 @@ impl Svg {
     pub fn gen_image(&self, image_scale: f64) -> Result<Image, anyhow::Error> {
         let width = (self.bounds.extents()[0] * image_scale).round().max(1.0) as u32;
         let height = (self.bounds.extents()[1] * image_scale).round().max(1.0) as u32;
-        let pixmap = render_svg_to_pixmap(
-            &self.to_document(),
-            width,
-            height,
-            self.bounds.mins,
-            image_scale,
-        )?;
+        let pixmap = render_svg_to_pixmap(&self.to_document(), width, height, image_scale)?;
 
         Ok(Image {
             data: glib::Bytes::from_owned(pixmap.data().to_vec()),
@@ -306,7 +299,6 @@ fn render_svg_to_pixmap(
     svg_data: &str,
     width: u32,
     height: u32,
-    offset: Vector2,
     scale: f64,
 ) -> Result<resvg::tiny_skia::Pixmap, anyhow::Error> {
     let tree = usvg::Tree::from_str(
@@ -318,9 +310,8 @@ fn render_svg_to_pixmap(
     )?;
     let mut pixmap = resvg::tiny_skia::Pixmap::new(width, height)
         .ok_or_else(|| anyhow::anyhow!("creating pixmap with size ({width}, {height}) failed"))?;
-    let scale = scale as f32;
-    let transform = resvg::tiny_skia::Transform::from_scale(scale, scale)
-        .post_translate(-(offset[0] as f32) * scale, -(offset[1] as f32) * scale);
+    // usvg already maps the root viewBox (self.bounds) onto (0, 0)..size.
+    let transform = resvg::tiny_skia::Transform::from_scale(scale as f32, scale as f32);
     resvg::render(&tree, transform, &mut pixmap.as_mut());
     Ok(pixmap)
 }
@@ -349,4 +340,19 @@ fn copy_pixmap_to_cairo(
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn usvg_normalizes_a_non_zero_viewbox_origin() {
+        // The Android resvg path relies on usvg mapping the root viewBox to
+        // (0, 0)..size, so the caller only translates by bounds.mins.
+        let svg = r#"<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="-5 -5 10 10"><rect x="-5" y="-5" width="10" height="10"/></svg>"#;
+        let tree = usvg::Tree::from_str(svg, &usvg::Options::default()).unwrap();
+        let bbox = tree.root().abs_layer_bounding_box();
+
+        assert!(bbox.x().abs() < 1e-3, "bbox x = {}", bbox.x());
+        assert!(bbox.y().abs() < 1e-3, "bbox y = {}", bbox.y());
+    }
 }
