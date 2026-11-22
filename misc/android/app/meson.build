@@ -173,6 +173,8 @@ rnote_lib = custom_target(
         cargo,
     ],
     depends: [libgtk, libadwaita],
+    # Meson cannot track the Rust workspace, so let cargo decide (it is incremental).
+    build_always_stale: true,
     build_by_default: true,
     console: true,
     install: true,
