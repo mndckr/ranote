@@ -1,5 +1,12 @@
 # Clipboard on Android
 
+Status: internal stroke copy/paste is covered by unit tests; cross-app copy and
+incoming image paste need a real device. Desktop behaviour is unchanged.
+
+Checked against the pinned GTK commit in
+[`misc/android/versions.env`](../../misc/android/versions.env)
+(`bd25f1e2dc2c2fbf3b8864e61afe642910ba359c`), file `gdk/android/gdkandroidclipboard.c`.
+
 ## What GTK's Android backend can carry
 
 Upstream (`gdk/android/gdkandroidclipboard.c`) serializes only these MIME types
@@ -32,7 +39,7 @@ clipboard (Gallery, screenshot tools, browsers).
 
 | Gap | Effect | Upstream |
 | --- | --- | --- |
-| Outgoing `application/rnote-stroke-content` is not serialized | Strokes cannot be copied from rnote into another app | [gdkandroidclipboard.c](https://gitlab.gnome.org/GNOME/gtk/-/blob/gtk-4-22/gdk/android/gdkandroidclipboard.c) (`gdk_android_clipboard_clipdata_from_provider_async`) |
+| Outgoing `application/rnote-stroke-content` is not serialized | Strokes cannot be copied from rnote into another app | [gdkandroidclipboard.c](https://gitlab.gnome.org/GNOME/gtk/-/blob/bd25f1e2dc2c2fbf3b8864e61afe642910ba359c/gdk/android/gdkandroidclipboard.c) (`gdk_android_clipboard_clipdata_from_provider_async`) |
 | Outgoing `image/svg+xml` and `image/png` are not serialized | A stroke selection cannot be copied as an image into another app | same |
 | Unsupported outgoing formats log `No compatible clipboard transfer format found` | The system clipboard keeps its previous content; rnote's local paste still works through the internal slot | same |
 | Incoming images require a content URI with an exact MIME match | Apps that put image bytes in `text/html`/`text/plain`, or report `image/*`, cannot be pasted | same (`gdk_android_clipdata_read_async`) |
