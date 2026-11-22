@@ -28,13 +28,7 @@ mod imp {
 
     impl Default for RnWorkspaceListEntryInner {
         fn default() -> Self {
-            let dir = std::env::home_dir().unwrap_or_else(|| {
-                if cfg!(target_os = "windows") {
-                    PathBuf::from("C:\\")
-                } else {
-                    PathBuf::from("./")
-                }
-            });
+            let dir = default_workspace_dir();
             Self {
                 dir: dir.to_string_lossy().to_string(),
                 icon: String::from("workspacelistentryicon-folder-symbolic"),
@@ -42,6 +36,27 @@ mod imp {
                 name: String::from("default"),
             }
         }
+    }
+
+    /// The initial workspace directory.
+    ///
+    /// Android has no user home directory, so use an app-specific one. It stays
+    /// usable when a SAF provider cannot enumerate its tree.
+    fn default_workspace_dir() -> PathBuf {
+        #[cfg(target_os = "android")]
+        if let Ok(data_dir) = crate::env::pkg_data_dir() {
+            let dir = data_dir.join("workspace");
+            let _ = std::fs::create_dir_all(&dir);
+            return dir;
+        }
+
+        std::env::home_dir().unwrap_or_else(|| {
+            if cfg!(target_os = "windows") {
+                PathBuf::from("C:\\")
+            } else {
+                PathBuf::from("./")
+            }
+        })
     }
 
     #[derive(Debug, Default)]
