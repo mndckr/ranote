@@ -61,8 +61,10 @@ mod imp {
         fn activate(&self) {
             self.parent_activate();
 
-            // init and show a new window
-            self.new_appwindow_init_show(None);
+            // Android hands "Open with" files over through the platform seam;
+            // desktop never queues one. Route them through the normal open path.
+            let launch_file = crate::platform::take_launch_file();
+            self.new_appwindow_init_show(launch_file);
         }
 
         fn open(&self, files: &[gio::File], hint: &str) {

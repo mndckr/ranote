@@ -1,5 +1,6 @@
 // Imports
 use crate::RnApp;
+use crate::platform::{self, Feature};
 use crate::{RnAppWindow, RnCanvas, config, dialogs};
 use gettextrs::gettext;
 use gtk4::gio::InputStream;
@@ -107,6 +108,7 @@ impl RnAppWindow {
         self.add_action(&action_open_doc);
         let action_print_doc = gio::SimpleAction::new("print-doc", None);
         self.add_action(&action_print_doc);
+        platform::apply_capabilities(platform::capabilities(), Feature::Print, &action_print_doc);
         let action_import_file = gio::SimpleAction::new("import-file", None);
         self.add_action(&action_import_file);
         let action_export_doc = gio::SimpleAction::new("export-doc", None);

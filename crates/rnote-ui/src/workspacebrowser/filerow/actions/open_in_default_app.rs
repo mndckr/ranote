@@ -1,5 +1,6 @@
 // Imports
 use crate::RnAppWindow;
+use crate::platform;
 use crate::workspacebrowser::RnFileRow;
 use gettextrs::gettext;
 use gtk4::{gio, gio::prelude::FileExt, glib, glib::clone};
@@ -20,7 +21,7 @@ pub(crate) fn open_in_default_app(
             let Some(current_file) = filerow.current_file() else {
                 return;
             };
-            if let Err(e) = open::that_detached(current_file.uri()) {
+            if let Err(e) = platform::open_external(&current_file) {
                 appwindow
                     .overlays()
                     .dispatch_toast_error(&gettext("Open the file in the default app failed"));

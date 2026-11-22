@@ -7,6 +7,7 @@ use crate::appwindow::RnAppWindow;
 use crate::canvas::RnCanvas;
 use crate::canvaswrapper::RnCanvasWrapper;
 use crate::config;
+use crate::platform::{self, Feature};
 use crate::workspacebrowser::workspacesbar::RnWorkspaceRow;
 use crate::{RnIconPicker, globals};
 use adw::prelude::*;
@@ -529,6 +530,7 @@ pub(crate) async fn dialog_edit_selected_workspace(appwindow: &RnAppWindow) {
     let dir_button: Button = builder
         .object("edit_selected_workspace_dir_button")
         .unwrap();
+    dir_button.set_visible(platform::feature_available(Feature::FolderPicker));
     let icon_menubutton: MenuButton = builder
         .object("edit_selected_workspace_icon_menubutton")
         .unwrap();

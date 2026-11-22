@@ -44,27 +44,43 @@ pub(crate) fn data_dir() -> anyhow::Result<PathBuf> {
 }
 
 pub(crate) fn pkg_data_dir() -> anyhow::Result<PathBuf> {
-    Ok(data_dir()?.join(config::APP_NAME))
-}
-
-pub(crate) fn locale_dir() -> anyhow::Result<PathBuf> {
-    if cfg!(target_os = "windows") {
-        let exec_dir = exec_parent_dir()?;
-
-        Ok(exec_dir.join("..\\share\\locale"))
-    } else if cfg!(target_os = "macos") {
-        let canonicalized_exec_dir = exec_parent_dir()?.canonicalize()?;
-
-        if macos_is_in_app_bundle(&canonicalized_exec_dir) {
-            Ok(canonicalized_exec_dir.join("../Resources/share/locale"))
-        } else {
-            Ok(PathBuf::from(config::LOCALEDIR))
-        }
-    } else {
-        Ok(PathBuf::from(config::LOCALEDIR))
+    #[cfg(target_os = "android")]
+    {
+        return Ok(android_dirs()?.data);
+    }
+    #[cfg(not(target_os = "android"))]
+    {
+        Ok(data_dir()?.join(config::APP_NAME))
     }
 }
 
+pub(crate) fn locale_dir() -> anyhow::Result<PathBuf> {
+    #[cfg(target_os = "android")]
+    {
+        // There is no writable system locale dir on Android; locales ship in the app data dir.
+        return Ok(android_dirs()?.locale);
+    }
+    #[cfg(not(target_os = "android"))]
+    {
+        if cfg!(target_os = "windows") {
+            let exec_dir = exec_parent_dir()?;
+
+            Ok(exec_dir.join("..\\share\\locale"))
+        } else if cfg!(target_os = "macos") {
+            let canonicalized_exec_dir = exec_parent_dir()?.canonicalize()?;
+
+            if macos_is_in_app_bundle(&canonicalized_exec_dir) {
+                Ok(canonicalized_exec_dir.join("../Resources/share/locale"))
+            } else {
+                Ok(PathBuf::from(config::LOCALEDIR))
+            }
+        } else {
+            Ok(PathBuf::from(config::LOCALEDIR))
+        }
+    }
+}
+
+#[cfg_attr(target_os = "android", allow(dead_code))]
 pub(crate) fn cache_dir() -> anyhow::Result<PathBuf> {
     let cache_dir = match env::var("XDG_CACHE_HOME") {
         Ok(p) => PathBuf::from(p),
@@ -85,7 +101,50 @@ pub(crate) fn cache_dir() -> anyhow::Result<PathBuf> {
     Ok(cache_dir)
 }
 
+/// App directories on Android, where there is no writable system data or locale dir.
+/// Tests resolve this with fake base dirs; only the Android build reads the real env.
+#[cfg(any(target_os = "android", test))]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct AndroidDirs {
+    pub(crate) data: PathBuf,
+    pub(crate) cache: PathBuf,
+    pub(crate) locale: PathBuf,
+}
+
+#[cfg(any(target_os = "android", test))]
+impl AndroidDirs {
+    /// The Android activity glue points the XDG base dirs at the app's private
+    /// storage; fall back to the usual HOME layout when it doesn't.
+    fn resolve(data_home: Option<&Path>, cache_home: Option<&Path>, home: &Path) -> Self {
+        let data_base = data_home.map_or_else(|| home.join(".local/share"), Path::to_path_buf);
+        let cache_base = cache_home.map_or_else(|| home.join(".cache"), Path::to_path_buf);
+        let data = data_base.join(config::APP_NAME);
+
+        Self {
+            cache: cache_base.join(config::APP_NAME),
+            locale: data.join("locale"),
+            data,
+        }
+    }
+}
+
+#[cfg(target_os = "android")]
+fn android_dirs() -> anyhow::Result<AndroidDirs> {
+    let home = env::home_dir().context("Unable to retrieve home dir")?;
+    let data_home = env::var_os("XDG_DATA_HOME").map(PathBuf::from);
+    let cache_home = env::var_os("XDG_CACHE_HOME").map(PathBuf::from);
+
+    Ok(AndroidDirs::resolve(
+        data_home.as_deref(),
+        cache_home.as_deref(),
+        &home,
+    ))
+}
+
 pub(crate) fn app_cache_dir() -> anyhow::Result<PathBuf> {
+    #[cfg(target_os = "android")]
+    let app_cache_dir = android_dirs()?.cache;
+    #[cfg(not(target_os = "android"))]
     let app_cache_dir = cache_dir()?.join(config::APP_NAME);
     if !app_cache_dir.exists() {
         debug!(
@@ -196,6 +255,42 @@ fn exec_parent_dir() -> anyhow::Result<PathBuf> {
             "could not get parent dir of executable path"
         ))?
         .to_path_buf())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn android_dirs_prefer_the_xdg_base_dirs() {
+        let app_home = Path::new("/data/user/0/com.github.flxzt.rnote");
+
+        let dirs = AndroidDirs::resolve(
+            Some(&app_home.join("files")),
+            Some(&app_home.join("cache")),
+            app_home,
+        );
+
+        assert_eq!(dirs.data, app_home.join("files").join(config::APP_NAME));
+        assert_eq!(dirs.cache, app_home.join("cache").join(config::APP_NAME));
+        assert_eq!(
+            dirs.locale,
+            app_home.join("files").join(config::APP_NAME).join("locale")
+        );
+    }
+
+    #[test]
+    fn android_dirs_fall_back_to_the_home_layout() {
+        let app_home = Path::new("/data/user/0/com.github.flxzt.rnote");
+
+        let dirs = AndroidDirs::resolve(None, None, app_home);
+
+        assert_eq!(
+            dirs.data,
+            app_home.join(".local/share").join(config::APP_NAME)
+        );
+        assert_eq!(dirs.cache, app_home.join(".cache").join(config::APP_NAME));
+    }
 }
 
 // this returns true when the app is packaged as a relocatable application bundle
