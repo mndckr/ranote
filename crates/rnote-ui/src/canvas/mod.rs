@@ -10,6 +10,7 @@ pub(crate) use input::reject_pointer_input;
 // Imports
 use crate::boxed::WidgetFlagsBoxed;
 use crate::i18n::gettext;
+use crate::platform;
 use crate::{RnAppWindow, config, env};
 use chrono::prelude::*;
 use futures::StreamExt;
@@ -550,6 +551,19 @@ mod imp {
                     super::input::handle_imcontext_text_commit(&canvas, text);
                 }
             ));
+
+            // Desktop IMEs draw the composition themselves. Android's IM context only
+            // emits the signals, so the canvas draws the composition on screen.
+            if platform::app_draws_ime_preedit() {
+                self.key_controller_im_context
+                    .connect_preedit_changed(clone!(
+                        #[weak(rename_to=canvas)]
+                        obj,
+                        move |cx| {
+                            super::input::handle_imcontext_preedit_changed(&canvas, cx);
+                        }
+                    ));
+            }
 
             // Key controller
             self.key_controller.connect_key_pressed(clone!(

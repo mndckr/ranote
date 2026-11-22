@@ -65,6 +65,16 @@ pub(crate) fn feature_available(feature: Feature) -> bool {
     capabilities().supports(feature)
 }
 
+/// Whether the canvas must draw the IME composition (preedit) string itself.
+///
+/// Desktop IM modules (IBus, Wayland text-input, Windows IME) draw the composition in
+/// their own popup, so drawing it again would duplicate it. GTK's Android IM context
+/// does not draw anything: it only emits `preedit-changed`/`commit` and expects the
+/// application to render the composition.
+pub(crate) fn app_draws_ime_preedit() -> bool {
+    cfg!(target_os = "android")
+}
+
 /// Disable an action whose feature the platform cannot back, so a broken dialog
 /// is never reachable from the menu or an accelerator.
 pub(crate) fn apply_capabilities(caps: Capabilities, feature: Feature, action: &gio::SimpleAction) {
@@ -193,6 +203,13 @@ mod tests {
         assert!(Capabilities::DESKTOP.supports(Feature::Print));
         assert!(Capabilities::DESKTOP.supports(Feature::FolderPicker));
         assert!(Capabilities::DESKTOP.supports(Feature::PenSounds));
+    }
+
+    #[test]
+    fn desktop_keeps_drawing_ime_preedit_itself() {
+        // Android's IM context relies on the app to draw the composition; desktop IM
+        // modules draw their own, so the canvas must leave desktop behaviour unchanged.
+        assert_eq!(app_draws_ime_preedit(), cfg!(target_os = "android"));
     }
 
     #[test]
