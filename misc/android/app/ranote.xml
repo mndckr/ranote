@@ -34,5 +34,15 @@
       <arch>aarch64</arch>
       <arch>x86_64</arch>
     </architectures>
+    <!--
+      NDK 27 still aligns ELF LOAD segments to 4 KB. Android 16+ flags such
+      apps and 16 KB-page devices cannot load them, so align every GTK lib to
+      16 KB. The build-id flag is repeated because a command-line option
+      replaces the cross file's c_link_args instead of extending them.
+    -->
+    <configure-options>
+      <option>-Dc_link_args=-Wl,--build-id=sha1 -Wl,-z,max-page-size=16384</option>
+      <option>-Dcpp_link_args=-Wl,--build-id=sha1 -Wl,-z,max-page-size=16384</option>
+    </configure-options>
   </build>
 </app>

@@ -30,5 +30,10 @@
       <arch>aarch64</arch>
       <arch>x86_64</arch>
     </architectures>
+    <!-- See app/ranote.xml: NDK 27 aligns LOAD segments to 4 KB by default. -->
+    <configure-options>
+      <option>-Dc_link_args=-Wl,--build-id=sha1 -Wl,-z,max-page-size=16384</option>
+      <option>-Dcpp_link_args=-Wl,--build-id=sha1 -Wl,-z,max-page-size=16384</option>
+    </configure-options>
   </build>
 </app>

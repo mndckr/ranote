@@ -79,6 +79,7 @@ env \
   -- \
   -C link-arg=-shared \
   -C link-arg=-Wl,--export-dynamic \
+  -C link-arg=-Wl,-z,max-page-size=16384 \
   -C link-arg=-llog
 
 install -m 0755 "$build_root/cargo-target/$rust_target/$profile/rnote" "$output"
