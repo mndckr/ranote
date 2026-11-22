@@ -31,7 +31,7 @@ use rnote_engine::ext::GraphenePointExt;
 use rnote_engine::ext::GrapheneRectExt;
 use rnote_engine::{Engine, WidgetFlags};
 use std::cell::{Cell, Ref, RefCell, RefMut};
-use std::collections::HashSet;
+use std::collections::HashMap;
 use std::path::Path;
 use std::time::Duration;
 use tracing::{debug, error, warn};
@@ -118,7 +118,7 @@ mod imp {
         pub(crate) unsaved_changes: Cell<bool>,
         pub(crate) empty: Cell<bool>,
         pub(crate) touch_drawing: Cell<bool>,
-        pub(crate) active_touches: RefCell<HashSet<gdk::EventSequence>>,
+        pub(crate) active_touches: RefCell<HashMap<gdk::EventSequence, std::time::Instant>>,
         pub(crate) show_drawing_cursor: Cell<bool>,
         pub(crate) text_input_enabled: Cell<bool>,
 
@@ -219,7 +219,7 @@ mod imp {
                 unsaved_changes: Cell::new(false),
                 empty: Cell::new(true),
                 touch_drawing: Cell::new(false),
-                active_touches: RefCell::new(HashSet::new()),
+                active_touches: RefCell::new(HashMap::new()),
                 show_drawing_cursor: Cell::new(false),
                 text_input_enabled: Cell::new(false),
 
@@ -894,15 +894,26 @@ impl RnCanvas {
     /// the current count, and is 0 on Android, so touch sequences are tracked here.
     pub(crate) fn track_touch_event(&self, event: &gdk::Event) -> u32 {
         let mut active_touches = self.imp().active_touches.borrow_mut();
+        let now = std::time::Instant::now();
+
+        // Drop sequences whose TouchEnd/Cancel never arrived (e.g. the sequence
+        // was claimed by a popover or dropped by the input dispatcher). A live
+        // touch is refreshed by its update events; a stale one is not, and would
+        // otherwise inflate the count until the app restarts.
+        active_touches.retain(|_, last_seen| now.duration_since(*last_seen) < std::time::Duration::from_millis(750));
 
         match event.event_type() {
             gdk::EventType::TouchBegin => {
-                active_touches.insert(event.event_sequence());
+                active_touches.insert(event.event_sequence(), now);
             }
             gdk::EventType::TouchEnd | gdk::EventType::TouchCancel => {
                 active_touches.remove(&event.event_sequence());
             }
-            _ => {}
+            _ => {
+                if let Some(last_seen) = active_touches.get_mut(&event.event_sequence()) {
+                    *last_seen = now;
+                }
+            }
         }
 
         active_touches.len() as u32
