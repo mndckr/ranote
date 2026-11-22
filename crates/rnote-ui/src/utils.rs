@@ -84,6 +84,64 @@ pub(crate) fn files_eq(first: &gio::File, second: &gio::File) -> bool {
     first.equal(second)
 }
 
+/// The directory a document is displayed as living in.
+///
+/// Content URIs have no parent directory, so show their provider instead.
+pub(crate) fn folder_display(file: &gio::File) -> Option<String> {
+    if let Some(parent) = file.parent() {
+        return Some(
+            parent
+                .path()
+                .map(|p| p.display().to_string())
+                .unwrap_or_else(|| parent.uri().to_string()),
+        );
+    }
+
+    file.uri()
+        .strip_prefix("content://")
+        .and_then(|rest| rest.split('/').next())
+        .map(|authority| format!("content://{authority}"))
+}
+
+/// The local path to watch for external changes, if the document has one.
+///
+/// GdkAndroidContentFile reports its URI path as `path()`, which is not a
+/// filesystem path, so non-native files must not be watched with `notify`.
+pub(crate) fn local_watch_path(file: &gio::File) -> Option<PathBuf> {
+    if !file.is_native() {
+        return None;
+    }
+    file.path()
+}
+
+/// Give a save-as target the `.rnote` extension.
+///
+/// Android's create-document picker ignores GtkFileDialog's suggested name, so a
+/// new document can come back without the extension that identifies it on reopen.
+pub(crate) fn ensure_rnote_extension(file: gio::File) -> gio::File {
+    if !file.has_uri_scheme("content") {
+        return file;
+    }
+    let Some(name) = file.basename() else {
+        return file;
+    };
+    let name = name.to_string_lossy();
+    if name.is_empty() || name.to_ascii_lowercase().ends_with(".rnote") {
+        return file;
+    }
+
+    match file.set_display_name(&format!("{name}.rnote"), gio::Cancellable::NONE) {
+        Ok(renamed) => renamed,
+        Err(err) => {
+            error!(
+                "Renaming save target `{}` to add the .rnote extension failed: {err}",
+                file.uri()
+            );
+            file
+        }
+    }
+}
+
 /// Resolve a stored workspace directory, which is either a local path or a URI.
 pub(crate) fn file_for_dir_str(dir: &str) -> gio::File {
     // "://" keeps Windows drive paths ("C:\notes") from parsing as a URI scheme.
@@ -341,6 +399,71 @@ pub(crate) fn path_walk_up_until_exists(path: impl AsRef<Path>) -> anyhow::Resul
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn content_uris_compare_by_document_identity() {
+        let note =
+            gio::File::for_uri("content://com.example.documents/document/notes%2Fnote.rnote");
+        let same =
+            gio::File::for_uri("content://com.example.documents/document/notes%2Fnote.rnote");
+        let other =
+            gio::File::for_uri("content://com.example.documents/document/notes%2Fother.rnote");
+
+        assert!(files_eq(&note, &same));
+        assert!(!files_eq(&note, &other));
+    }
+
+    #[test]
+    fn folder_display_uses_content_authority_without_a_parent() {
+        assert_eq!(
+            folder_display(&gio::File::for_uri(
+                "content://com.example.documents/document/notes%2Fnote.rnote"
+            )),
+            Some("content://com.example.documents".to_string())
+        );
+    }
+
+    #[test]
+    fn folder_display_uses_the_parent_for_local_files() {
+        let dir = std::env::temp_dir().join("rsnote-folder-display");
+        let file = gio::File::for_path(dir.join("note.rnote"));
+
+        assert_eq!(
+            folder_display(&file),
+            Some(dir.display().to_string().trim_end_matches('/').to_string())
+        );
+    }
+
+    #[test]
+    fn only_local_files_get_a_file_watcher() {
+        let path = std::env::temp_dir().join("rsnote-watch.rnote");
+        assert_eq!(
+            local_watch_path(&gio::File::for_path(&path)),
+            Some(path.clone())
+        );
+        assert_eq!(
+            local_watch_path(&gio::File::for_uri(&format!("file://{}", path.display()))),
+            Some(path)
+        );
+        assert_eq!(
+            local_watch_path(&gio::File::for_uri(
+                "content://com.example.documents/document/notes%2Fnote.rnote"
+            )),
+            None
+        );
+    }
+
+    #[test]
+    fn save_target_keeps_local_paths_and_nameless_documents() {
+        let path = std::env::temp_dir().join("rsnote-save-target.rnote");
+        assert_eq!(
+            ensure_rnote_extension(gio::File::for_path(&path)).uri(),
+            gio::File::for_path(&path).uri()
+        );
+
+        let content = gio::File::for_uri("content://com.example.documents/document/notes");
+        assert_eq!(ensure_rnote_extension(content.clone()).uri(), content.uri());
+    }
 
     #[test]
     fn files_eq_matches_path_and_uri_for_same_file() {

@@ -197,6 +197,46 @@ misc/android/
     icons/ic-launcher-foreground.xml   hand-written AVD, so no Svg2Avd/Android Studio
 ```
 
+## SAF open and save (ticket #8)
+
+Documents are opened and saved through the system picker, never through a
+storage path and never with a storage permission.
+
+- `Open`, `Save` and `Save As` use `GtkFileDialog`, which GTK's Android backend
+  implements as `ACTION_OPEN_DOCUMENT` / `ACTION_CREATE_DOCUMENT`. The picker
+  returns a `GdkAndroidContentFile`, a `GFile` over the content URI.
+- The app addresses documents as `gio::File` (ticket #2), so one open/save path
+  serves file paths and content URIs. Saves use
+  `gio::File::replace_contents_async` with `REPLACE_DESTINATION`.
+- Content files report `standard::type` as unknown, and may report a generic MIME
+  type. `FileType` therefore treats unknown types as files, classifies by MIME
+  type, and falls back to the basename extension;
+  `vnd.android.document/directory` is a folder.
+- Documents without a local path get no `notify` file watcher
+  (`utils::local_watch_path`). The title subtitle shows the content provider
+  instead of a folder path.
+- The create-document picker ignores `GtkFileDialog`'s suggested name, so a
+  freshly created content document is renamed to `<name>.rnote` when it has no
+  extension (`utils::ensure_rnote_extension`).
+- Open/save filters pass `application/rnote` and, on Android,
+  `application/octet-stream`: GTK's Android chooser ignores suffix and pattern
+  rules and filters by MIME type, and SAF reports unregistered types as
+  octet-stream.
+- No storage permission is requested. Pixiewood generates the manifest from
+  `com.github.flxzt.rnote.metainfo.xml`; it adds only `REORDER_TASKS`, and file
+  access happens through SAF grants.
+
+Device-time gaps:
+
+- GTK 4.22.5 launches create-document with intent type `*/*` (the filter MIME
+  types go into `EXTRA_MIME_TYPES`) and drops the suggested filename. A provider
+  that rejects `*/*` makes Save As fail; that needs a device check and, if it
+  happens, a minimal GTK patch.
+- Content URI grants are not persisted yet. Reopening a document after the
+  process is killed needs `takePersistableUriPermission` (ticket #10).
+- Open → edit → save → reopen through a cloud provider cannot be exercised
+  without a device.
+
 ## What is verified, and what still needs an SDK host
 
 Verified without an SDK/NDK/device:
@@ -207,6 +247,8 @@ Verified without an SDK/NDK/device:
   the real `po/*.po` files;
 - `cargo check --workspace --all-targets` and the workspace tests pass on
   desktop;
+- document classification from MIME type and extension, and document identity,
+  folder display and watcher gating for `content://` URIs (unit tests);
 - `cargo check -p rnote --target aarch64-linux-android --bin rnote` compiles the
   Android cfg paths (resvg SVG path, pure-Rust gettext, silent audio stub);
 - pinned tags/commits resolve to the recorded revisions and the Gradle 9.6.0
@@ -231,8 +273,9 @@ Known device-time gaps, deliberately not solved in ticket #6:
   selection is best effort (`LANGUAGE`/`LC_*`/`LANG`, then GLib's language
   list). Translations are packaged and the reader works when a locale is
   selected.
-- Stylus pressure, SAF file access, lifecycle/autosave, IME, and the rest of the
-  spike are later tickets (#8+), not part of this build wiring.
+- Stylus pressure, lifecycle/autosave, IME, and the rest of the spike are later
+  tickets, not part of this build wiring. SAF open/save landed in ticket #8 (see
+  above).
 
 ## CI
 
