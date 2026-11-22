@@ -57,6 +57,13 @@ Icon-only controls with no text now set `GtkAccessible` labels (translated) for:
 
 The menu items themselves already have labels.
 
+**Blocker to check on device:** the pinned GTK 4.22 Android backend has no
+accessibility bridge (no Android `AccessibilityNodeProvider` in
+`gdk/android`). The labels above are set at the GTK accessibility layer, which
+is what desktop screen readers read, but TalkBack may still see the GTK surface
+as one node. If it does, exposing GTK widgets to TalkBack needs an upstream GTK
+Android bridge and is outside this ticket's "basic labels" scope.
+
 ## Device verification
 
 Requires a device or emulator with the APK installed
