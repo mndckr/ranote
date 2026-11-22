@@ -1126,6 +1126,8 @@ impl Typewriter {
 
         self.pos = None;
         self.reset_blink();
+        // The committed text replaces the composition.
+        self.preedit = None;
 
         let event_result = match &mut self.state {
             TypewriterState::Idle => EventResult {
@@ -1280,6 +1282,7 @@ impl Typewriter {
     ) -> (EventResult<PenProgress>, WidgetFlags) {
         let widget_flags = WidgetFlags::default();
         self.pos = None;
+        self.preedit = None;
 
         let event_result = match &mut self.state {
             TypewriterState::Idle => EventResult {

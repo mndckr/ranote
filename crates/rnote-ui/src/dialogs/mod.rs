@@ -180,8 +180,10 @@ pub(crate) async fn dialog_close_tab(appwindow: &RnAppWindow, tab_page: &adw::Ta
     if save_file.is_none()
         && let Some(save_folder) = save_folder.as_ref()
     {
-        save_file =
-            Some(crate::utils::unique_file_in_dir(save_folder, &canvas.doc_title_display(), 0).0);
+        save_file = Some(
+            crate::utils::unique_file_in_dir(save_folder, &canvas.doc_title_display(), "rnote", 0)
+                .0,
+        );
     }
 
     let save_file_display_name = save_file
@@ -292,6 +294,7 @@ pub(crate) async fn dialog_close_window(appwindow: &RnAppWindow) {
             let (unique_file, next_postfix) = crate::utils::unique_file_in_dir(
                 save_folder,
                 &canvas.doc_title_display(),
+                "rnote",
                 doc_postfix,
             );
             save_file = Some(unique_file);
