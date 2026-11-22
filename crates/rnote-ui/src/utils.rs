@@ -76,6 +76,24 @@ pub(crate) async fn create_replace_file_future(
     Ok(())
 }
 
+/// Write fully prepared export bytes.
+///
+/// A failed export must not leave a partial file. On Android the SAF
+/// create-document picker only ever returns a freshly created document, so
+/// removing it on failure cannot touch existing user data.
+pub(crate) async fn write_export_file(bytes: Vec<u8>, file: &gio::File) -> anyhow::Result<()> {
+    match create_replace_file_future(bytes, file).await {
+        Ok(()) => Ok(()),
+        Err(err) => {
+            #[cfg(target_os = "android")]
+            if let Err(cleanup_err) = file.delete_future().await {
+                error!("Removing failed export `{file:?}` failed, Err: {cleanup_err}");
+            }
+            Err(err)
+        }
+    }
+}
+
 /// Whether two [`gio::File`]s refer to the same document.
 ///
 /// Compares the file identity GIO derives from the URI, so a local path and its
@@ -101,7 +119,7 @@ pub(crate) fn file_dir_identity(file: &gio::File) -> String {
         .unwrap_or_else(|| file.uri().to_string())
 }
 
-/// Find a non-existing `.rnote` file in `folder` named after `base_title`,
+/// Find a non-existing file in `folder` named after `base_title` and `file_ext`,
 /// appending the duplicate suffix as needed.
 ///
 /// Returns the file and the next free duplicate index, so callers can keep names
@@ -109,14 +127,15 @@ pub(crate) fn file_dir_identity(file: &gio::File) -> String {
 pub(crate) fn unique_file_in_dir(
     folder: &gio::File,
     base_title: &str,
+    file_ext: &str,
     start_index: u32,
 ) -> (gio::File, u32) {
     let mut index = start_index;
     loop {
         let name = if index == 0 {
-            format!("{base_title}.rnote")
+            format!("{base_title}.{file_ext}")
         } else {
-            format!("{base_title}{FILE_DUP_SUFFIX_DELIM}{index}.rnote")
+            format!("{base_title}{FILE_DUP_SUFFIX_DELIM}{index}.{file_ext}")
         };
         let candidate = folder.child(&name);
 
@@ -126,6 +145,21 @@ pub(crate) fn unique_file_in_dir(
 
         index += 1;
     }
+}
+
+/// The location shown for a selected file: its local path, or its URI when it has none.
+pub(crate) fn file_location_label(file: &gio::File) -> String {
+    file.path()
+        .map(|p| p.to_string_lossy().to_string())
+        .unwrap_or_else(|| file.uri().to_string())
+}
+
+/// What an export success toast should open: the containing folder for local
+/// files, or the file itself when there is no browsable folder (content URI).
+pub(crate) fn export_view_target(file: &gio::File) -> gio::File {
+    file.parent()
+        .filter(|parent| parent.path().is_some())
+        .unwrap_or_else(|| file.clone())
 }
 
 pub(crate) fn str_from_u8_nul_utf8(utf8_src: &[u8]) -> Result<&str, std::str::Utf8Error> {
@@ -461,10 +495,55 @@ mod tests {
             gio::File::for_path(&dir),
             gio::File::for_uri(&format!("file://{}", dir.display())),
         ] {
-            let (file, next) = unique_file_in_dir(&folder, "note", 0);
+            let (file, next) = unique_file_in_dir(&folder, "note", "rnote", 0);
             assert_eq!(file.basename().unwrap(), PathBuf::from("note - 2.rnote"));
             assert_eq!(next, 3);
         }
+
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn unique_file_in_dir_uses_the_requested_file_extension() {
+        let dir = std::env::temp_dir().join(format!("rsnote-unique-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("page-1.png"), b"png").unwrap();
+
+        let (file, next) = unique_file_in_dir(&gio::File::for_path(&dir), "page-1", "png", 0);
+        assert_eq!(file.basename().unwrap(), PathBuf::from("page-1 - 1.png"));
+        assert_eq!(next, 2);
+
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn file_location_label_uses_the_path_or_the_uri() {
+        let path = std::env::temp_dir().join("rsnote-location.pdf");
+        assert_eq!(
+            file_location_label(&gio::File::for_path(&path)),
+            path.to_string_lossy()
+        );
+
+        let content_uri = "content://com.example.documents/document/report.pdf";
+        assert_eq!(
+            file_location_label(&gio::File::for_uri(content_uri)),
+            content_uri
+        );
+    }
+
+    #[test]
+    fn export_view_target_is_the_folder_for_local_files_and_the_file_for_content_uris() {
+        let dir = std::env::temp_dir().join(format!("rsnote-view-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let file = dir.join("report.pdf");
+
+        let local_target = export_view_target(&gio::File::for_path(&file));
+        assert!(files_eq(&local_target, &gio::File::for_path(&dir)));
+
+        let content_file =
+            gio::File::for_uri("content://com.example.documents/document/report.pdf");
+        let content_target = export_view_target(&content_file);
+        assert!(files_eq(&content_target, &content_file));
 
         std::fs::remove_dir_all(&dir).unwrap();
     }
@@ -480,6 +559,21 @@ mod tests {
             create_replace_file_future(contents.clone(), &file)
                 .await
                 .unwrap();
+            let (bytes, _) = file.load_bytes_future().await.unwrap();
+            assert_eq!(bytes.as_ref(), contents.as_slice());
+        });
+
+        std::fs::remove_file(&path).unwrap();
+    }
+
+    #[test]
+    fn write_export_file_writes_the_prepared_bytes() {
+        let path = std::env::temp_dir().join(format!("rsnote-export-{}.pdf", uuid::Uuid::new_v4()));
+        let file = gio::File::for_uri(&format!("file://{}", path.display()));
+        let contents = b"pdf test bytes".to_vec();
+
+        gtk4::glib::MainContext::new().block_on(async {
+            write_export_file(contents.clone(), &file).await.unwrap();
             let (bytes, _) = file.load_bytes_future().await.unwrap();
             assert_eq!(bytes.as_ref(), contents.as_slice());
         });

@@ -4,7 +4,7 @@
 use crate::RnStrokeContentPreview;
 use crate::canvas::{self, RnCanvas};
 use crate::i18n::gettext;
-use crate::platform::{self, Feature};
+use crate::platform;
 use crate::{RnAppWindow, config};
 use adw::prelude::*;
 use gtk4::{Builder, Button, FileDialog, FileFilter, Label, gio, glib, glib::clone};
@@ -152,15 +152,9 @@ pub(crate) async fn dialog_export_doc_w_prefs(appwindow: &RnAppWindow, canvas: &
                     create_filedialog_export_doc(&appwindow, &canvas, &doc_export_prefs);
                 match filedialog.save_future(Some(&appwindow)).await {
                     Ok(f) => {
-                        if let Some(path_string) = f.path().map(|p| p.to_string_lossy().to_string()) {
-                            export_file_label.set_label(&path_string);
-                            button_confirm.set_sensitive(true);
-                            selected_file.replace(Some(f));
-                        } else {
-                            export_file_label.set_label(&gettext("- no file selected -"));
-                            button_confirm.set_sensitive(false);
-                            selected_file.replace(None);
-                        }
+                        export_file_label.set_label(&crate::utils::file_location_label(&f));
+                        button_confirm.set_sensitive(true);
+                        selected_file.replace(Some(f));
                     }
                     Err(e) => {
                         debug!("Did not export document (Error or dialog dismissed by user), Err: {e:?}");
@@ -286,55 +280,56 @@ pub(crate) async fn dialog_export_doc_w_prefs(appwindow: &RnAppWindow, canvas: &
         }
     ));
 
-    export_doc_button_confirm.connect_clicked(clone!(#[weak] dialog, #[weak] canvas, #[weak] appwindow , move |_| {
-        dialog.close();
+    export_doc_button_confirm.connect_clicked(clone!(
+        #[weak]
+        dialog,
+        #[weak]
+        canvas,
+        #[weak]
+        appwindow,
+        move |_| {
+            dialog.close();
 
-        let Some(file) = selected_file.take() else {
-            appwindow
-                .overlays()
-                .dispatch_toast_error(&gettext("Exporting document failed, no file selected"));
-            return;
-        };
+            let Some(file) = selected_file.take() else {
+                appwindow
+                    .overlays()
+                    .dispatch_toast_error(&gettext("Exporting document failed, no file selected"));
+                return;
+            };
 
-        glib::spawn_future_local(clone!(#[weak] canvas, #[weak] appwindow , async move {
-            appwindow.overlays().progressbar_start_pulsing();
+            glib::spawn_future_local(clone!(
+                #[weak]
+                canvas,
+                #[weak]
+                appwindow,
+                async move {
+                    appwindow.overlays().progressbar_start_pulsing();
 
-            let file_title = crate::utils::default_file_title_for_export(
-                Some(file.clone()),
-                Some(&canvas::OUTPUT_FILE_NEW_TITLE),
-                None,
-            );
+                    let file_title = crate::utils::default_file_title_for_export(
+                        Some(file.clone()),
+                        Some(&canvas::OUTPUT_FILE_NEW_TITLE),
+                        None,
+                    );
 
-            if let Err(e) = canvas.export_doc(&file, file_title, None).await {
-                error!("Exporting document failed, Err: `{e:?}`");
-                appwindow.overlays().dispatch_toast_error(&gettext("Exporting document failed"));
-                appwindow.overlays().progressbar_abort();
-                return
-            }
-
-            appwindow.overlays().dispatch_toast_w_button(
-                &gettext("Exported document successfully"),
-                &gettext("View in file manager"),
-                clone!(#[weak] appwindow , move |_reload_toast| {
-                    let Some(folder_path_string) = file
-                        .parent()
-                        .and_then(|p|
-                            p.path())
-                        .and_then(|p| p.into_os_string().into_string().ok()) else {
-                            error!("Failed to get the parent folder of the output file `{file:?}.");
-                            appwindow.overlays().dispatch_toast_error(&gettext("Failed to view the file in the file manager"));
-                            return;
-                    };
-
-                    if let Err(e) = platform::open_external(&gio::File::for_path(&folder_path_string)) {
-                        error!("Opening the parent folder '{folder_path_string}' in the file manager failed, Err: {e:?}");
-                        appwindow.overlays().dispatch_toast_error(&gettext("Failed to view the file in the file manager"));
+                    if let Err(e) = canvas.export_doc(&file, file_title, None).await {
+                        error!("Exporting document failed, Err: `{e:?}`");
+                        appwindow
+                            .overlays()
+                            .dispatch_toast_error(&gettext("Exporting document failed"));
+                        appwindow.overlays().progressbar_abort();
+                        return;
                     }
+
+                    dispatch_exported_toast(
+                        &appwindow,
+                        file,
+                        &gettext("Exported document successfully"),
+                    );
+                    appwindow.overlays().progressbar_finish();
                 }
-            ), crate::overlays::TEXT_TOAST_TIMEOUT_DEFAULT);
-            appwindow.overlays().progressbar_finish();
-        }));
-    }));
+            ));
+        }
+    ));
 
     // set file dialog as initial focus
     dialog.set_focus(Some(&export_file_button));
@@ -437,7 +432,6 @@ pub(crate) async fn dialog_export_doc_pages_w_prefs(appwindow: &RnAppWindow, can
     let export_dir_button: Button = builder
         .object("export_doc_pages_export_dir_button")
         .unwrap();
-    export_dir_button.set_visible(platform::feature_available(Feature::FolderPicker));
     let export_files_stemname_entryrow: adw::EntryRow = builder
         .object("export_doc_pages_export_files_stemname_entryrow")
         .unwrap();
@@ -517,15 +511,9 @@ pub(crate) async fn dialog_export_doc_pages_w_prefs(appwindow: &RnAppWindow, can
                 );
                 match filedialog.select_folder_future(Some(&appwindow)).await {
                     Ok(f) => {
-                        if let Some(path_string) = f.path().map(|p| p.to_string_lossy().to_string()) {
-                            export_dir_label.set_label(&path_string);
-                            button_confirm.set_sensitive(true);
-                            selected_file.replace(Some(f));
-                        } else {
-                            export_dir_label.set_label(&gettext("- no directory selected -"));
-                            button_confirm.set_sensitive(false);
-                            selected_file.replace(None);
-                        }
+                        export_dir_label.set_label(&crate::utils::file_location_label(&f));
+                        button_confirm.set_sensitive(true);
+                        selected_file.replace(Some(f));
                     }
                     Err(e) => {
                         debug!("Did not export document pages (Error or dialog dismissed by user), Err: {e:?}");
@@ -721,47 +709,59 @@ pub(crate) async fn dialog_export_doc_pages_w_prefs(appwindow: &RnAppWindow, can
         }
     ));
 
-    export_doc_pages_button_confirm.connect_clicked(clone!(#[weak] export_files_stemname_entryrow, #[weak] dialog, #[weak] canvas, #[weak] appwindow,  move |_| {
-        dialog.close();
+    export_doc_pages_button_confirm.connect_clicked(clone!(
+        #[weak]
+        export_files_stemname_entryrow,
+        #[weak]
+        dialog,
+        #[weak]
+        canvas,
+        #[weak]
+        appwindow,
+        move |_| {
+            dialog.close();
 
-        let Some(dir) = selected_file.take() else {
-            appwindow.overlays().dispatch_toast_error(&gettext(
-                "Exporting document pages failed, no directory selected",
-            ));
-            return;
-        };
+            let Some(dir) = selected_file.take() else {
+                appwindow.overlays().dispatch_toast_error(&gettext(
+                    "Exporting document pages failed, no directory selected",
+                ));
+                return;
+            };
 
-        glib::spawn_future_local(clone!(#[weak] export_files_stemname_entryrow, #[weak] canvas, #[weak] appwindow,  async move {
-            appwindow.overlays().progressbar_start_pulsing();
+            glib::spawn_future_local(clone!(
+                #[weak]
+                export_files_stemname_entryrow,
+                #[weak]
+                canvas,
+                #[weak]
+                appwindow,
+                async move {
+                    appwindow.overlays().progressbar_start_pulsing();
 
-            let file_stem_name = export_files_stemname_entryrow.text().to_string();
+                    let file_stem_name = export_files_stemname_entryrow.text().to_string();
 
-            if let Err(e) = canvas.export_doc_pages(&appwindow, &dir, file_stem_name, None).await {
-                error!("Exporting document pages failed, Err: {e:?}");
-                appwindow.overlays().dispatch_toast_error(&gettext("Exporting document pages failed"));
-                appwindow.overlays().progressbar_abort();
-                return
-            }
-
-            appwindow.overlays().dispatch_toast_w_button(
-                &gettext("Exported document pages successfully"),
-                &gettext("View in file manager"),
-                clone!(#[weak] appwindow,  move |_reload_toast| {
-                    let Some(folder_path_string) = dir.path().and_then(|p| p.into_os_string().into_string().ok()) else {
-                        error!("Failed to get the path of the parent folder");
-                        appwindow.overlays().dispatch_toast_error(&gettext("Failed to view the file in the file manager"));
+                    if let Err(e) = canvas
+                        .export_doc_pages(&appwindow, &dir, file_stem_name, None)
+                        .await
+                    {
+                        error!("Exporting document pages failed, Err: {e:?}");
+                        appwindow
+                            .overlays()
+                            .dispatch_toast_error(&gettext("Exporting document pages failed"));
+                        appwindow.overlays().progressbar_abort();
                         return;
-                    };
-
-                    if let Err(e) = platform::open_external(&gio::File::for_path(&folder_path_string)) {
-                        error!("Opening the parent folder '{folder_path_string}' in the file manager failed, Err: {e:?}");
-                        appwindow.overlays().dispatch_toast_error(&gettext("Failed to view the file in the file manager"));
                     }
+
+                    dispatch_exported_toast(
+                        &appwindow,
+                        dir,
+                        &gettext("Exported document pages successfully"),
+                    );
+                    appwindow.overlays().progressbar_finish();
                 }
-            ), crate::overlays::TEXT_TOAST_TIMEOUT_DEFAULT);
-            appwindow.overlays().progressbar_finish();
-        }));
-    }));
+            ));
+        }
+    ));
 
     dialog.set_focus(Some(&export_dir_button));
     dialog.present(appwindow.root().as_ref());
@@ -916,15 +916,9 @@ pub(crate) async fn dialog_export_selection_w_prefs(appwindow: &RnAppWindow, can
                 );
                 match filedialog.save_future(Some(&appwindow)).await {
                     Ok(f) => {
-                        if let Some(path_string) = f.path().map(|p| p.to_string_lossy().to_string()) {
-                            export_file_label.set_label(&path_string);
-                            button_confirm.set_sensitive(true);
-                            selected_file.replace(Some(f));
-                        } else {
-                            export_file_label.set_label(&gettext("- no file selected -"));
-                            button_confirm.set_sensitive(false);
-                            selected_file.replace(None);
-                        }
+                        export_file_label.set_label(&crate::utils::file_location_label(&f));
+                        button_confirm.set_sensitive(true);
+                        selected_file.replace(Some(f));
                     }
                     Err(e) => {
                         debug!("Did not export selection (Error or dialog dismissed by user), Err: {e:?}");
@@ -1083,55 +1077,83 @@ pub(crate) async fn dialog_export_selection_w_prefs(appwindow: &RnAppWindow, can
         }
     ));
 
-    export_selection_button_confirm.connect_clicked(clone!(#[weak] dialog, #[weak] canvas, #[weak] appwindow , move |_| {
-        dialog.close();
+    export_selection_button_confirm.connect_clicked(clone!(
+        #[weak]
+        dialog,
+        #[weak]
+        canvas,
+        #[weak]
+        appwindow,
+        move |_| {
+            dialog.close();
 
-        let Some(file) = selected_file.take() else {
-            appwindow
-                .overlays()
-                .dispatch_toast_error(&gettext("Exporting selection failed, no file selected"));
-            return;
-        };
-
-        glib::spawn_future_local(clone!(#[weak] canvas, #[weak] appwindow , async move {
-            appwindow.overlays().progressbar_start_pulsing();
-
-            if let Err(e) = canvas.export_selection(&file, None).await {
-                error!("Exporting selection failed, Err: {e:?}");
+            let Some(file) = selected_file.take() else {
                 appwindow
                     .overlays()
-                    .dispatch_toast_error(&gettext("Exporting selection failed"));
-                appwindow.overlays().progressbar_abort();
+                    .dispatch_toast_error(&gettext("Exporting selection failed, no file selected"));
                 return;
-            }
+            };
 
-            appwindow.overlays().dispatch_toast_w_button(
-                &gettext("Exported selection successfully"),
-                &gettext("View in file manager"),
-                clone!(#[weak] appwindow , move |_| {
-                    let Some(folder_path_string) = file
-                        .parent()
-                        .and_then(|p|
-                            p.path())
-                        .and_then(|p| p.into_os_string().into_string().ok()) else {
-                            error!("Failed to get the parent folder of the output file `{file:?}.");
-                            appwindow.overlays().dispatch_toast_error(&gettext("Failed to view the file in the file manager"));
-                            return;
-                    };
+            glib::spawn_future_local(clone!(
+                #[weak]
+                canvas,
+                #[weak]
+                appwindow,
+                async move {
+                    appwindow.overlays().progressbar_start_pulsing();
 
-                    if let Err(e) = platform::open_external(&gio::File::for_path(&folder_path_string)) {
-                        error!("Opening the parent folder '{folder_path_string}' in the file manager failed, Err: {e:?}");
-                        appwindow.overlays().dispatch_toast_error(&gettext("Failed to view the file in the file manager"));
+                    if let Err(e) = canvas.export_selection(&file, None).await {
+                        error!("Exporting selection failed, Err: {e:?}");
+                        appwindow
+                            .overlays()
+                            .dispatch_toast_error(&gettext("Exporting selection failed"));
+                        appwindow.overlays().progressbar_abort();
+                        return;
                     }
-                }),
-                crate::overlays::TEXT_TOAST_TIMEOUT_DEFAULT,
-            );
-            appwindow.overlays().progressbar_finish();
-        }));
-    }));
+
+                    dispatch_exported_toast(
+                        &appwindow,
+                        file,
+                        &gettext("Exported selection successfully"),
+                    );
+                    appwindow.overlays().progressbar_finish();
+                }
+            ));
+        }
+    ));
 
     dialog.set_focus(Some(&export_file_button));
     dialog.present(appwindow.root().as_ref());
+}
+
+/// Show the export success toast. Local files offer their containing folder;
+/// files without a browsable folder (SAF content URIs) are opened directly.
+fn dispatch_exported_toast(appwindow: &RnAppWindow, file: gio::File, success_text: &str) {
+    let view_target = crate::utils::export_view_target(&file);
+    let opens_file = crate::utils::files_eq(&view_target, &file);
+    let action_label = if opens_file {
+        gettext("Open")
+    } else {
+        gettext("View in file manager")
+    };
+
+    appwindow.overlays().dispatch_toast_w_button(
+        success_text,
+        &action_label,
+        clone!(
+            #[weak]
+            appwindow,
+            move |_reload_toast| {
+                if let Err(e) = platform::open_external(&view_target) {
+                    error!("Opening exported `{view_target:?}` failed, Err: {e:?}");
+                    appwindow
+                        .overlays()
+                        .dispatch_toast_error(&gettext("Open the file in the default app failed"));
+                }
+            }
+        ),
+        crate::overlays::TEXT_TOAST_TIMEOUT_DEFAULT,
+    );
 }
 
 /// Returns (if possible) a "reasonable" folder for export operations
