@@ -70,10 +70,11 @@ language pack such as Japanese/Chinese/Korean).
    ```
 
    `ImContext.ImeConnection` logs `IME: setComposingText(...)`,
-   `IME: finishComposingText()` and `IME: commitText(...)` at INFO. If no
-   composition events appear, confirm the android IM module was selected by
-   looking for `No IM module matching GTK_IM_MODULE` and by running GTK with
-   `GTK_DEBUG=modules`.
+   `IME: finishComposingText()` and `IME: commitText(...)` at INFO; these are the
+   practical signal on device. If no composition events appear, the android IM
+   module was likely not selected: grep the log for
+   `No IM module matching GTK_IM_MODULE` and, in a debug build launched with
+   `GTK_DEBUG=modules` in the environment, for the selected IM module.
 
 2. Select the typewriter tool, tap the canvas with the stylus (keyboard must appear),
    and test. Without a stylus, enable "Draw with touch" first so a finger tap can
