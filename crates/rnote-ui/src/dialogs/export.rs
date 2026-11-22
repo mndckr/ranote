@@ -29,6 +29,10 @@ pub(crate) async fn dialog_save_doc_as(appwindow: &RnAppWindow, canvas: &RnCanva
     } else {
         filter.add_mime_type("application/rnote");
     }
+    // The Android picker filters by MIME only; SAF documents without a
+    // registered MIME type are reported as octet-stream.
+    #[cfg(target_os = "android")]
+    filter.add_mime_type("application/octet-stream");
     if cfg!(target_os = "macos") {
         filter.add_suffix("rnote");
     }
@@ -62,6 +66,10 @@ pub(crate) async fn dialog_save_doc_as(appwindow: &RnAppWindow, canvas: &RnCanva
     match filedialog.save_future(Some(appwindow)).await {
         Ok(selected_file) => {
             appwindow.overlays().progressbar_start_pulsing();
+
+            // The Android picker ignores the suggested name, so a created
+            // content document may need the extension that identifies it later.
+            let selected_file = crate::utils::ensure_rnote_extension(selected_file);
 
             match canvas.save_document_to_file(&selected_file).await {
                 Ok(true) => {

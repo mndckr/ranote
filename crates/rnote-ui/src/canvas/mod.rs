@@ -1081,12 +1081,7 @@ impl RnCanvas {
     pub(crate) fn doc_folderpath_display(&self) -> String {
         self.output_file()
             .map(|f| {
-                f.parent()
-                    .map(|p| {
-                        p.path()
-                            .map(|p| p.display().to_string())
-                            .unwrap_or_else(|| p.uri().to_string())
-                    })
+                crate::utils::folder_display(&f)
                     .unwrap_or_else(|| gettext("- invalid folder path -"))
             })
             .unwrap_or_else(|| OUTPUT_FILE_NEW_SUBTITLE.to_string())
@@ -1261,8 +1256,9 @@ impl RnCanvas {
             appwindow,
             async move {
                 let (tx, mut rx) = futures::channel::mpsc::unbounded();
-                let Some(file_path) = file.path() else {
-                    warn!("Can't create watcher for file that has no path");
+                let Some(file_path) = crate::utils::local_watch_path(&file) else {
+                    // Content URIs (Android SAF) have no filesystem path to watch.
+                    debug!("Not watching output file without a local path: `{file:?}`");
                     return;
                 };
                 let Some(parent_path) = file_path.parent() else {

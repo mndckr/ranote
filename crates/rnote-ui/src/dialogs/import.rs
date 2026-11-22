@@ -27,6 +27,10 @@ pub(crate) async fn filedialog_open_doc(appwindow: &RnAppWindow) {
     } else {
         filter.add_mime_type("application/rnote");
     }
+    // The Android picker filters by MIME only; SAF documents without a
+    // registered MIME type are reported as octet-stream.
+    #[cfg(target_os = "android")]
+    filter.add_mime_type("application/octet-stream");
     filter.add_suffix("rnote");
     filter.set_name(Some(&gettext(".rnote")));
 
