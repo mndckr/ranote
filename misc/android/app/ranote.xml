@@ -1,13 +1,17 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-  Pixiewood manifest: https://github.com/sp1ritCS/gtk-android-builder
+  Pixiewood manifest for the real rnote UI (ticket #6).
 
-  Run from this directory (misc/android/smoke) via scripts/setup.sh.
-  Revisions are pinned so a clean checkout fetches the same sources.
+  Run from this directory via scripts/setup.sh with RANOTE_ANDROID_TARGET=app.
+  Revisions match misc/android/versions.env; setup.sh fails on drift.
+
+  Pixiewood turns the AppStream mediatype below into a VIEW filter for
+  application/rnote. The .rnote extension/octet-stream filter that file
+  managers need is added by scripts/patch-manifest.py after generation.
 -->
 <app xmlns="https://sp1rit.arpa/pixiewood/" xmlns:xi="http://www.w3.org/2001/XInclude">
   <metainfo vercalc="sem121010">
-    <xi:include href="src://org.rsnote.Smoke.metainfo.xml" parse="xml"/>
+    <xi:include href="src://com.github.flxzt.rnote.metainfo.xml" parse="xml"/>
   </metainfo>
   <style>
     <theme name="adw"/>
@@ -25,7 +29,7 @@
     <gtk revision="bd25f1e2dc2c2fbf3b8864e61afe642910ba359c"/>
     <libadwaita revision="dfc1d654639d3160c3689597274cb537f164c25d"/>
   </dependencies>
-  <build target="rsnote-smoke">
+  <build target="rnote">
     <architectures>
       <arch>aarch64</arch>
       <arch>x86_64</arch>

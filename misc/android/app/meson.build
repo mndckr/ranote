@@ -1,5 +1,5 @@
 project(
-    'rsnote-android',
+    'ranote-android',
     ['c', 'cpp'],
     version: '0.15.0',
     meson_version: '>= 1.9.0',

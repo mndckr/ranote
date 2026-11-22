@@ -18,7 +18,7 @@ The recorder lives in `crates/rnote-ui/src/perf.rs`. It is debug-only and off by
 default:
 
 - it only activates in a debug build on Android;
-- it needs an explicit opt-in: the `RSNOTE_PERF` environment variable
+- it needs an explicit opt-in: the `RANOTE_PERF` environment variable
   (`1`/`true`/`yes`/`on`) or an app-private `perf.on` marker file;
 - in a release build the hooks return immediately and nothing is recorded.
 

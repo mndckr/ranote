@@ -1,5 +1,5 @@
 /*
- * rsnote Android smoke test.
+ * ranote Android smoke test.
  *
  * Proves the pinned GTK + libadwaita Android toolchain: a window with an
  * Adwaita toolbar, a status page and one interactive button. No rnote code.
@@ -43,11 +43,11 @@ on_activate (GtkApplication *app, gpointer user_data)
                                         adw_version,
                                         gsk_renderer ? gsk_renderer : "unset");
 
-  gtk_window_set_title (GTK_WINDOW (window), "rsnote Android smoke");
+  gtk_window_set_title (GTK_WINDOW (window), "ranote Android smoke");
   gtk_window_set_default_size (GTK_WINDOW (window), 800, 600);
 
   adw_header_bar_set_title_widget (ADW_HEADER_BAR (header_bar),
-                                   gtk_label_new ("rsnote Android smoke"));
+                                   gtk_label_new ("ranote Android smoke"));
 
   adw_status_page_set_title (ADW_STATUS_PAGE (status_page),
                              "GTK + libadwaita on Android");
@@ -91,7 +91,7 @@ main (int argc, char **argv)
    */
   g_setenv ("GSK_RENDERER", "gl", TRUE);
 
-  app = adw_application_new ("org.rsnote.Smoke", G_APPLICATION_DEFAULT_FLAGS);
+  app = adw_application_new ("org.ranote.Smoke", G_APPLICATION_DEFAULT_FLAGS);
   g_signal_connect (app, "activate", G_CALLBACK (on_activate), NULL);
 
   return g_application_run (G_APPLICATION (app), argc, argv);

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Install the pinned Android SDK/NDK, meson and pixiewood, then configure the
-# selected build (RSNOTE_ANDROID_TARGET=smoke|app). Safe to re-run: it resets the
+# selected build (RANOTE_ANDROID_TARGET=smoke|app). Safe to re-run: it resets the
 # generated meson build directories.
 set -euo pipefail
 

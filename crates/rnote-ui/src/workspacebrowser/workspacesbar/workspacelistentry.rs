@@ -238,7 +238,7 @@ mod tests {
     #[test]
     fn ensure_dir_walks_up_missing_local_paths() {
         let missing = std::env::temp_dir()
-            .join(format!("rsnote-missing-{}", uuid::Uuid::new_v4()))
+            .join(format!("ranote-missing-{}", uuid::Uuid::new_v4()))
             .join("a")
             .join("b");
         let entry = RnWorkspaceListEntry::default();

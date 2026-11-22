@@ -1,10 +1,10 @@
-# rsnote (fork of rnote)
+# ranote (fork of rnote)
 
 ## Agent skills
 
 ### Issue tracker
 
-Issues live as GitHub issues in `mndckr/rsnote`, managed with the `gh` CLI. See `docs/agents/issue-tracker.md`.
+Issues live as GitHub issues in `mndckr/ranote`, managed with the `gh` CLI. See `docs/agents/issue-tracker.md`.
 
 ### Triage labels
 

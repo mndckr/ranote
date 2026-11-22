@@ -4,16 +4,16 @@
   name and releases from here (versionCode from sem121010).
 -->
 <component type="desktop-application" xmlns="https://specifications.freedesktop.org/metainfo/1.0">
-  <id>org.rsnote.Smoke</id>
-  <name>rsnote Android smoke</name>
+  <id>org.ranote.Smoke</id>
+  <name>ranote Android smoke</name>
   <summary>GTK and libadwaita toolchain smoke test</summary>
   <metadata_license>CC0-1.0</metadata_license>
   <project_license>GPL-3.0-or-later</project_license>
-  <developer id="org.rsnote">
-    <name>The rsnote Authors</name>
+  <developer id="org.ranote">
+    <name>The ranote Authors</name>
   </developer>
-  <launchable type="desktop-id">org.rsnote.Smoke.desktop</launchable>
-  <url type="homepage">https://github.com/mndckr/rsnote</url>
+  <launchable type="desktop-id">org.ranote.Smoke.desktop</launchable>
+  <url type="homepage">https://github.com/mndckr/ranote</url>
   <content_rating type="oars-1.1"/>
   <description>
     <p>

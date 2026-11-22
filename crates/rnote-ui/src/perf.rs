@@ -1,7 +1,7 @@
 //! Debug-only performance instrumentation for the Android spike (ticket #12).
 //!
 //! Off by default. Active only in a debug build on Android, and only after an
-//! explicit opt-in: the `RSNOTE_PERF` environment variable, or an app-private
+//! explicit opt-in: the `RANOTE_PERF` environment variable, or an app-private
 //! `perf.on` marker file (see `just android-app-perf-on`).
 //!
 //! It records frame intervals, non-stylus touch input-to-snapshot latency
@@ -99,7 +99,7 @@ pub(crate) fn enabled() -> bool {
         if !cfg!(target_os = "android") || !cfg!(debug_assertions) {
             return false;
         }
-        let env_value = std::env::var("RSNOTE_PERF").ok();
+        let env_value = std::env::var("RANOTE_PERF").ok();
         opted_in(env_value.as_deref(), marker_exists())
     })
 }

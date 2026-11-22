@@ -273,30 +273,30 @@ android-device-check *ARGS:
 
 [doc('Install the pinned Android toolchain and configure the rnote-ui Android build.')]
 android-app-setup:
-    RSNOTE_ANDROID_TARGET=app {{ android_dir }}/scripts/setup.sh
+    RANOTE_ANDROID_TARGET=app {{ android_dir }}/scripts/setup.sh
 
 [doc('Cross-compile rnote-ui and package the Android APK.')]
 android-app-build *ARGS:
-    RSNOTE_ANDROID_TARGET=app {{ android_dir }}/scripts/build.sh {{ ARGS }}
+    RANOTE_ANDROID_TARGET=app {{ android_dir }}/scripts/build.sh {{ ARGS }}
 
 [doc('Install the rnote-ui APK on the attached device/emulator and launch it.')]
 android-app-install:
-    RSNOTE_ANDROID_TARGET=app {{ android_dir }}/scripts/install.sh
+    RANOTE_ANDROID_TARGET=app {{ android_dir }}/scripts/install.sh
 
 [doc('Follow filtered logcat from the rnote-ui Android app.')]
 android-app-logcat *ARGS:
-    RSNOTE_ANDROID_TARGET=app {{ android_dir }}/scripts/logcat.sh {{ ARGS }}
+    RANOTE_ANDROID_TARGET=app {{ android_dir }}/scripts/logcat.sh {{ ARGS }}
 
 [doc('Collect device, GPU, app version, memory, frame and log data for rnote-ui.')]
 android-app-device-check *ARGS:
-    RSNOTE_ANDROID_TARGET=app {{ android_dir }}/scripts/device-check.sh {{ ARGS }}
+    RANOTE_ANDROID_TARGET=app {{ android_dir }}/scripts/device-check.sh {{ ARGS }}
 
 # Debug-only perf instrumentation (ticket #12). Off by default; never logs note contents.
 android-app-perf-on:
-    RSNOTE_ANDROID_TARGET=app {{ android_dir }}/scripts/perf-toggle.sh on
+    RANOTE_ANDROID_TARGET=app {{ android_dir }}/scripts/perf-toggle.sh on
 
 android-app-perf-off:
-    RSNOTE_ANDROID_TARGET=app {{ android_dir }}/scripts/perf-toggle.sh off
+    RANOTE_ANDROID_TARGET=app {{ android_dir }}/scripts/perf-toggle.sh off
 
 [doc('Remove generated Android build output and downloaded subprojects.')]
 android-clean:

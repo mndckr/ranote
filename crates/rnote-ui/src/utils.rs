@@ -471,7 +471,7 @@ mod tests {
 
     #[test]
     fn folder_display_uses_the_parent_for_local_files() {
-        let dir = std::env::temp_dir().join("rsnote-folder-display");
+        let dir = std::env::temp_dir().join("ranote-folder-display");
         let file = gio::File::for_path(dir.join("note.rnote"));
 
         assert_eq!(
@@ -482,7 +482,7 @@ mod tests {
 
     #[test]
     fn only_local_files_get_a_file_watcher() {
-        let path = std::env::temp_dir().join("rsnote-watch.rnote");
+        let path = std::env::temp_dir().join("ranote-watch.rnote");
         assert_eq!(
             local_watch_path(&gio::File::for_path(&path)),
             Some(path.clone())
@@ -501,7 +501,7 @@ mod tests {
 
     #[test]
     fn save_target_keeps_local_paths_and_nameless_documents() {
-        let path = std::env::temp_dir().join("rsnote-save-target.rnote");
+        let path = std::env::temp_dir().join("ranote-save-target.rnote");
         assert_eq!(
             ensure_rnote_extension(gio::File::for_path(&path)).uri(),
             gio::File::for_path(&path).uri()
@@ -513,7 +513,7 @@ mod tests {
 
     #[test]
     fn files_eq_matches_path_and_uri_for_same_file() {
-        let path = std::env::temp_dir().join("rsnote-files-eq-doc.rnote");
+        let path = std::env::temp_dir().join("ranote-files-eq-doc.rnote");
         let by_path = gio::File::for_path(&path);
         let by_uri = gio::File::for_uri(&format!("file://{}", path.display()));
 
@@ -523,15 +523,15 @@ mod tests {
 
     #[test]
     fn files_eq_distinct_for_different_files() {
-        let by_path = gio::File::for_path(std::env::temp_dir().join("rsnote-files-eq-a.rnote"));
-        let by_uri = gio::File::for_uri("file:///tmp/rsnote-files-eq-b.rnote");
+        let by_path = gio::File::for_path(std::env::temp_dir().join("ranote-files-eq-a.rnote"));
+        let by_uri = gio::File::for_uri("file:///tmp/ranote-files-eq-b.rnote");
 
         assert!(!files_eq(&by_path, &by_uri));
     }
 
     #[test]
     fn workspace_dirs_resolve_from_paths_and_uris() {
-        let path = std::env::temp_dir().join("rsnote-workspace-dir");
+        let path = std::env::temp_dir().join("ranote-workspace-dir");
         let by_path = file_for_dir_str(&path.to_string_lossy());
         let by_uri = file_for_dir_str(&format!("file://{}", path.display()));
 
@@ -551,7 +551,7 @@ mod tests {
 
     #[test]
     fn workspace_dir_identity_keeps_local_paths_and_remote_uris() {
-        let path = std::env::temp_dir().join("rsnote-workspace-dir");
+        let path = std::env::temp_dir().join("ranote-workspace-dir");
         assert_eq!(
             file_dir_identity(&gio::File::for_path(&path)),
             path.to_string_lossy()
@@ -566,7 +566,7 @@ mod tests {
 
     #[test]
     fn workspace_dir_lists_entries_through_paths_and_uris() {
-        let dir = std::env::temp_dir().join(format!("rsnote-list-{}", uuid::Uuid::new_v4()));
+        let dir = std::env::temp_dir().join(format!("ranote-list-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&dir).unwrap();
         std::fs::write(dir.join("note.rnote"), b"rnote").unwrap();
 
@@ -600,7 +600,7 @@ mod tests {
     #[test]
     fn missing_workspace_dir_lists_no_entries() {
         let folder = gio::File::for_uri(&format!(
-            "file://{}/rsnote-missing-{}",
+            "file://{}/ranote-missing-{}",
             std::env::temp_dir().display(),
             uuid::Uuid::new_v4()
         ));
@@ -621,7 +621,7 @@ mod tests {
 
     #[test]
     fn unique_file_in_dir_avoids_collisions_for_paths_and_uris() {
-        let dir = std::env::temp_dir().join(format!("rsnote-unique-{}", uuid::Uuid::new_v4()));
+        let dir = std::env::temp_dir().join(format!("ranote-unique-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&dir).unwrap();
         std::fs::write(dir.join("note.rnote"), b"rnote").unwrap();
         std::fs::write(dir.join("note - 1.rnote"), b"rnote").unwrap();
@@ -640,7 +640,7 @@ mod tests {
 
     #[test]
     fn unique_file_in_dir_uses_the_requested_file_extension() {
-        let dir = std::env::temp_dir().join(format!("rsnote-unique-{}", uuid::Uuid::new_v4()));
+        let dir = std::env::temp_dir().join(format!("ranote-unique-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&dir).unwrap();
         std::fs::write(dir.join("page-1.png"), b"png").unwrap();
 
@@ -653,7 +653,7 @@ mod tests {
 
     #[test]
     fn file_location_label_uses_the_path_or_the_uri() {
-        let path = std::env::temp_dir().join("rsnote-location.pdf");
+        let path = std::env::temp_dir().join("ranote-location.pdf");
         assert_eq!(
             file_location_label(&gio::File::for_path(&path)),
             path.to_string_lossy()
@@ -668,7 +668,7 @@ mod tests {
 
     #[test]
     fn export_view_target_is_the_folder_for_local_files_and_the_file_for_content_uris() {
-        let dir = std::env::temp_dir().join(format!("rsnote-view-{}", uuid::Uuid::new_v4()));
+        let dir = std::env::temp_dir().join(format!("ranote-view-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&dir).unwrap();
         let file = dir.join("report.pdf");
 
@@ -686,7 +686,7 @@ mod tests {
     #[test]
     fn create_replace_writes_and_reads_through_file_uri() {
         let path =
-            std::env::temp_dir().join(format!("rsnote-write-{}.rnote", uuid::Uuid::new_v4()));
+            std::env::temp_dir().join(format!("ranote-write-{}.rnote", uuid::Uuid::new_v4()));
         let file = gio::File::for_uri(&format!("file://{}", path.display()));
         let contents = b"rnote test bytes".to_vec();
 
@@ -703,7 +703,7 @@ mod tests {
 
     #[test]
     fn write_export_file_writes_the_prepared_bytes() {
-        let path = std::env::temp_dir().join(format!("rsnote-export-{}.pdf", uuid::Uuid::new_v4()));
+        let path = std::env::temp_dir().join(format!("ranote-export-{}.pdf", uuid::Uuid::new_v4()));
         let file = gio::File::for_uri(&format!("file://{}", path.display()));
         let contents = b"pdf test bytes".to_vec();
 

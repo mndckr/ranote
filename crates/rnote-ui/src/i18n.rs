@@ -263,7 +263,7 @@ mod catalog {
 
         #[test]
         fn find_mo_file_prefers_the_package_catalog() {
-            let dir = std::env::temp_dir().join(format!("rsnote-mo-{}", std::process::id()));
+            let dir = std::env::temp_dir().join(format!("ranote-mo-{}", std::process::id()));
             std::fs::create_dir_all(&dir).unwrap();
             std::fs::write(dir.join("de.mo"), b"de").unwrap();
             let preferred = dir.join(format!("{}.mo", crate::config::GETTEXT_PACKAGE));

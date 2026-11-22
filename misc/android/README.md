@@ -50,7 +50,7 @@ The app build also needs `cargo` and `rustup` in `PATH`.
 
 `scripts/setup.sh` creates its own meson 1.9.2 virtualenv and installs the SDK,
 NDK and pixiewood under `$HOME/Android/Sdk` and
-`${XDG_CACHE_HOME:-$HOME/.cache}/rsnote-android`. It does not use `sudo` and
+`${XDG_CACHE_HOME:-$HOME/.cache}/ranote-android`. It does not use `sudo` and
 does not modify system packages. Set `ANDROID_HOME` to use an existing SDK
 instead.
 
@@ -85,8 +85,8 @@ just android-device-check
 
 Artifacts:
 
-- rnote APK: `misc/android/build/rsnote-android.apk`.
-- smoke APK: `misc/android/build/rsnote-smoke.apk`.
+- rnote APK: `misc/android/build/ranote-android.apk`.
+- smoke APK: `misc/android/build/ranote-smoke.apk`.
 - Raw Gradle output: `misc/android/{app,smoke}/_pixiewood/android/app/build/outputs/apk/debug/`.
 - Device report: `misc/android/build/device-check-<timestamp>.txt`.
 
@@ -100,9 +100,9 @@ App identity:
 
 | | rnote | smoke |
 |---|---|---|
-| Package | `com.github.flxzt.rnote` | `org.rsnote.smoke` |
+| Package | `com.github.flxzt.rnote` | `org.ranote.smoke` |
 | Activity | `org.gtk.android.ToplevelActivity` | same |
-| AppStream id | `com.github.flxzt.rnote` | `org.rsnote.Smoke` |
+| AppStream id | `com.github.flxzt.rnote` | `org.ranote.Smoke` |
 | MIME | `application/rnote` | none |
 
 ## How the rnote app is built
@@ -172,8 +172,8 @@ working GL stack:
 ```sh
 sdkmanager --sdk_root="$ANDROID_HOME" \
   "emulator" "system-images;android-36;google_apis;x86_64"
-avdmanager create avd -n rsnote -k "system-images;android-36;google_apis;x86_64"
-emulator -avd rsnote -gpu host
+avdmanager create avd -n ranote -k "system-images;android-36;google_apis;x86_64"
+emulator -avd ranote -gpu host
 ```
 
 Use `-gpu host` on a machine with a GPU. `-gpu swiftshader_indirect` can boot
@@ -200,14 +200,14 @@ misc/android/
     setup.sh build.sh install.sh logcat.sh device-check.sh   shared, target-aware
     cargo-build.sh             rnote-ui cross-build + gtk-rs pkg-config bridge
     patch-manifest.py          adds the .rnote pathPattern intent filter
-    env.sh                     RSNOTE_ANDROID_TARGET=smoke|app selection
+    env.sh                     RANOTE_ANDROID_TARGET=smoke|app selection
   smoke/
     meson.build                GTK + libadwaita target, android_exe_type: 'application'
     src/main.c                 minimal AdwApplication smoke UI
-    rsnote-smoke.xml           pixiewood manifest (deps + revisions)
+    ranote-smoke.xml           pixiewood manifest (deps + revisions)
   app/
     meson.build                rnote-ui cargo target, locales, GSchema
-    rsnote.xml                 pixiewood manifest (deps + revisions)
+    ranote.xml                 pixiewood manifest (deps + revisions)
     com.github.flxzt.rnote.metainfo.xml
     icons/ic-launcher-foreground.xml   hand-written AVD, so no Svg2Avd/Android Studio
 ```
@@ -447,7 +447,7 @@ on `ubuntu-24.04`:
 1. installs the host prerequisites listed above;
 2. runs `just android-app-setup` and `just android-app-build`;
 3. checks that the APK contains `librnote.so` for both ABIs and uploads it as
-   the `rsnote-android-apk` artifact (30 days).
+   the `ranote-android-apk` artifact (30 days).
 
 Build errors fail the job. No emulator or device tests run in CI, so a green job
 does not mean the app runs; use `just android-app-device-check` on hardware.
