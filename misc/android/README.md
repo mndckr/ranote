@@ -382,6 +382,37 @@ Still requires a machine with the Android SDK, NDK and a device/emulator:
 - "Open with" from the Files app, cold and warm; a warm start must open the
   document in a new window (see the file-association section above).
 
+### Lifecycle, autosave and draft recovery (ticket #10)
+
+GTK's Android activity exposes no pause/stop callback. The activity's window
+loses focus when it pauses, so `platform::watch_lifecycle()` turns "no app
+window is focused" into the pause hook. The pause handler saves every unsaved
+tab: documents with an output file are written back, the rest become drafts
+under the app cache (`<app cache>/rnote/drafts`). Rotation does not recreate the
+activity (pixiewood's manifest sets `configChanges` for orientation and screen
+size), so the document and view stay in memory. Desktop never triggers the hook,
+so its behaviour is unchanged.
+
+Android sets no `XDG_CACHE_HOME`, and `HOME` is not usable, so `env.rs` derives
+the app cache as the sibling of the internal `files` dir that GTK exposes in
+`XDG_DATA_DIRS`.
+
+Verified without a device:
+
+- unit tests for the pause/resume edge logic and the Android cache path
+  derivation;
+- `cargo check -p rnote --all-targets` on desktop and
+  `cargo check -p rnote --target aarch64-linux-android --bin rnote`.
+
+Device verification still required:
+
+1. Draw, press Home before the autosave interval elapses,
+   `adb shell am kill com.github.flxzt.rnote`, relaunch: the recovery dialog
+   offers the draft.
+2. Repeat pause/kill/restore ten times: each draft opens with all strokes.
+3. Rotate while editing: same document and view, no recovery dialog.
+4. Background with a saved document open: the file is rewritten on pause.
+
 Remaining device-time gaps:
 
 - The pinned GTK wrap builds gdk-pixbuf without the librsvg SVG loader, so the
@@ -393,9 +424,9 @@ Remaining device-time gaps:
   [`../../docs/android/theme-locale-accessibility.md`](../../docs/android/theme-locale-accessibility.md).
 - The same doc covers the Android night-mode bridge, app-private GSettings
   persistence and the TalkBack labels for the main controls.
-- Stylus pressure, lifecycle/autosave, IME, and the rest of the spike are later
-  tickets, not part of this build wiring. SAF open/save landed in ticket #8 and
-  SAF workspace folders in ticket #9 (see above).
+- Stylus pressure, IME, and the rest of the spike are later tickets, not part
+  of this build wiring. SAF open/save landed in ticket #8 and SAF workspace
+  folders in ticket #9 (see above).
 
 ## CI
 

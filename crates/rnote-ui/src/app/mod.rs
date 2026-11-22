@@ -73,6 +73,22 @@ mod imp {
             self.setup_buildables();
             obj.setup_actions();
             obj.setup_action_accels();
+
+            // Android pauses the activity without closing the GTK windows, so
+            // flush unsaved work through the platform seam. Desktop never
+            // pauses, so the handler never runs there.
+            crate::platform::on_pause(|| {
+                let Some(application) = gio::Application::default()
+                    .and_then(|application| application.downcast::<gtk4::Application>().ok())
+                else {
+                    return;
+                };
+                for window in application.windows() {
+                    if let Some(appwindow) = window.downcast_ref::<RnAppWindow>() {
+                        appwindow.save_unsaved_tabs();
+                    }
+                }
+            });
         }
 
         fn activate(&self) {

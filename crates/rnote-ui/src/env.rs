@@ -137,11 +137,30 @@ impl AndroidDirs {
     }
 }
 
+/// GTK's Android runtime puts the app's internal `files/share` in
+/// `XDG_DATA_DIRS` but sets no `XDG_CACHE_HOME`, and `HOME` is not usable.
+/// Android keeps the cache dir as a sibling of `files`, so derive it from there.
+#[cfg_attr(not(any(target_os = "android", test)), allow(dead_code))]
+fn cache_home_from_data_dirs(data_dirs: &[PathBuf]) -> Option<PathBuf> {
+    for dir in data_dirs {
+        let Some(files_dir) = dir.parent() else {
+            continue;
+        };
+        if files_dir.file_name() != Some(OsStr::new("files")) {
+            continue;
+        }
+        return files_dir.parent().map(|base| base.join("cache"));
+    }
+    None
+}
+
 #[cfg(target_os = "android")]
 fn android_dirs() -> anyhow::Result<AndroidDirs> {
     let home = env::home_dir().context("Unable to retrieve home dir")?;
     let data_home = env::var_os("XDG_DATA_HOME").map(PathBuf::from);
-    let cache_home = env::var_os("XDG_CACHE_HOME").map(PathBuf::from);
+    let cache_home = env::var_os("XDG_CACHE_HOME")
+        .map(PathBuf::from)
+        .or_else(|| cache_home_from_data_dirs(&gtk4::glib::system_data_dirs()));
 
     Ok(AndroidDirs::resolve(
         data_home.as_deref(),
@@ -378,6 +397,28 @@ mod tests {
             app_home.join(".local/share").join(config::APP_NAME)
         );
         assert_eq!(dirs.cache, app_home.join(".cache").join(config::APP_NAME));
+    }
+
+    #[test]
+    fn android_cache_home_is_the_sibling_of_the_files_dir() {
+        let data_dirs = [
+            PathBuf::from("/usr/share"),
+            PathBuf::from("/data/user/0/com.github.flxzt.rnote/files/share"),
+        ];
+
+        assert_eq!(
+            cache_home_from_data_dirs(&data_dirs),
+            Some(PathBuf::from("/data/user/0/com.github.flxzt.rnote/cache"))
+        );
+    }
+
+    #[test]
+    fn android_cache_home_ignores_non_android_data_dirs() {
+        assert_eq!(
+            cache_home_from_data_dirs(&[PathBuf::from("/usr/share")]),
+            None
+        );
+        assert_eq!(cache_home_from_data_dirs(&[]), None);
     }
 }
 

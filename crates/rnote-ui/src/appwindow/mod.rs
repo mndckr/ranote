@@ -292,6 +292,7 @@ impl RnAppWindow {
         }
 
         // Anything that needs to be done right before showing the appwindow
+        crate::platform::watch_lifecycle(self.upcast_ref());
 
         self.refresh_ui();
     }
@@ -432,6 +433,51 @@ impl RnAppWindow {
             tabs.push(wrapper);
         }
         tabs
+    }
+
+    /// Save every tab with unsaved changes: documents that have an output file
+    /// are written back to it, everything else is saved as a draft in the app
+    /// cache. Used by periodic autosave and by the Android pause handler.
+    pub(crate) fn save_unsaved_tabs(&self) {
+        let appwindow = self.clone();
+
+        for (i, tab) in self.get_all_tabs().iter().enumerate() {
+            let canvas = tab.canvas();
+            if !canvas.unsaved_changes() {
+                continue;
+            }
+            if let Some(output_file) = canvas.output_file() {
+                debug!(
+                    "there are unsaved changes on the tab {:?} with a file on disk, saving",
+                    i
+                );
+                glib::spawn_future_local(clone!(
+                    #[weak]
+                    canvas,
+                    #[weak]
+                    appwindow,
+                    async move {
+                        if let Err(e) = canvas.save_document_to_file(&output_file).await {
+                            error!("Saving document failed, Err: `{e:?}`");
+                            canvas.set_output_file(None);
+                            appwindow
+                                .overlays()
+                                .dispatch_toast_error(&gettext("Saving document failed"));
+                        };
+                    }
+                ));
+            } else {
+                glib::spawn_future_local(clone!(
+                    #[weak]
+                    canvas,
+                    async move {
+                        if let Err(err) = canvas.save_draft().await {
+                            error!("Saving draft failed: {err}");
+                        }
+                    }
+                ));
+            }
+        }
     }
 
     /// Get the active (selected) tab page child.

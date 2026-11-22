@@ -12,7 +12,7 @@ use rnote_engine::engine::EngineConfigShared;
 use rnote_engine::pens::PenStyle;
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
-use tracing::{debug, error, trace};
+use tracing::debug;
 
 #[derive(Debug, CompositeTemplate)]
 #[template(resource = "/com/github/flxzt/rnote/ui/appwindow.ui")]
@@ -440,44 +440,23 @@ impl RnAppWindow {
     fn update_autosave_handler(&self) {
         let obj = self.obj();
 
-        if let Some(removed_id) = self.autosave_source_id.borrow_mut().replace(
-            glib::source::timeout_add_seconds_local(
-                self.autosave_interval_secs.get(),
-                clone!(#[weak(rename_to=appwindow)] obj, #[upgrade_or] glib::ControlFlow::Break, move || {
-                    // save for all tabs opened in the current window that have unsaved changes
-                    let tabs = appwindow.get_all_tabs();
-
-                    for (i, tab) in tabs.iter().enumerate() {
-                        let canvas = tab.canvas();
-                        if !canvas.unsaved_changes() {
-                            continue;
+        if let Some(removed_id) =
+            self.autosave_source_id
+                .borrow_mut()
+                .replace(glib::source::timeout_add_seconds_local(
+                    self.autosave_interval_secs.get(),
+                    clone!(
+                        #[weak(rename_to=appwindow)]
+                        obj,
+                        #[upgrade_or]
+                        glib::ControlFlow::Break,
+                        move || {
+                            appwindow.save_unsaved_tabs();
+                            glib::ControlFlow::Continue
                         }
-                        if let Some(output_file) = canvas.output_file() {
-                            trace!(
-                                "there are unsaved changes on the tab {:?} with a file on disk, saving",i
-                            );
-                            glib::spawn_future_local(clone!(#[weak] canvas, #[weak] appwindow ,async move {
-                                if let Err(e) = canvas.save_document_to_file(&output_file).await {
-                                    error!("Saving document failed, Err: `{e:?}`");
-                                    canvas.set_output_file(None);
-                                    appwindow
-                                        .overlays()
-                                        .dispatch_toast_error(&gettext("Saving document failed"));
-                                };
-                            }));
-                        } else {
-                            glib::spawn_future_local(clone!(#[weak] canvas, async move {
-                            if let Err(err) = canvas.save_draft().await {
-                                error!("Saving draft failed: {err}");
-                            }
-                            }));
-                        }
-                    }
-
-                    glib::ControlFlow::Continue
-                }),
-            ),
-        ) {
+                    ),
+                ))
+        {
             removed_id.remove();
         }
     }
