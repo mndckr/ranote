@@ -75,7 +75,9 @@ language pack such as Japanese/Chinese/Korean).
    looking for `No IM module matching GTK_IM_MODULE` and by running GTK with
    `GTK_DEBUG=modules`.
 
-2. Select the typewriter tool, tap the canvas (keyboard must appear), and test:
+2. Select the typewriter tool, tap the canvas with the stylus (keyboard must appear),
+   and test. Without a stylus, enable "Draw with touch" first so a finger tap can
+   enter the text tool (see gap 6).
 
    - Gboard Latin with prediction/autocorrect: compose, pick a suggestion, commit.
      Characters must arrive once, in order.
@@ -86,8 +88,8 @@ language pack such as Japanese/Chinese/Korean).
    - Compose in the middle of an existing text stroke and commit (the inline
      composition overlays the tail before commit; see gap 4).
    - Cancel the composition / press Back mid-composition: nothing is inserted.
-   - Switch to the pen tool and back: the keyboard hides/shows, no stale
-     composition remains.
+   - Switch to the pen tool: the keyboard hides. Switching back needs a tap on the
+     canvas to re-focus the text tool (same as desktop).
    - Rotate or background the app while composing: record whether the composition
      (not committed text) survives.
 3. Save through SAF, close the document, reopen it: all committed non-Latin text
@@ -103,6 +105,7 @@ language pack such as Japanese/Chinese/Korean).
 | 3 | Cursor location is not propagated to the Android IME (the Android `GtkIMContext` does not use `gtk_im_context_set_cursor_location`), so the candidate bar / extract mode may not follow the caret. | `gtk/gtkimcontextandroid.c` implements no cursor-location handling. | Verify on device; cosmetic until then. |
 | 4 | The composition is drawn inline at the caret without reflowing following text, so composing in the middle of an existing stroke overlaps the tail until commit. Composition at the end of a stroke (the common case) is correct. The preedit never persists. | `Typewriter::draw_preedit`. | App-side visual limitation; acceptable for the spike. |
 | 5 | `commitText()` commits the whole editable content after `setComposingText()`; possible duplicated composing text is unverified. | GTK 4.22.5 `ImContext.java`. | Device checklist item (step 2). |
+| 6 | Finger taps are rejected by the canvas unless "Draw with touch" is enabled, so on Android the text tool must be entered with a stylus (or with touch drawing enabled) before the soft keyboard can be used. Moving the caret afterwards needs the same. | `reject_pointer_input_kind()` in `crates/rnote-ui/src/canvas/input.rs`; scoped to input handling in #11, not the IME work here. | Gap; composition/commit itself works once the typewriter is active. Revisit with #11/#24. |
 
 References: GTK [MR !7555](https://gitlab.gnome.org/GNOME/gtk/-/merge_requests/7555)
 (Android GL/IME, SDK 36), gtk-rs Android build
