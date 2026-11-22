@@ -18,8 +18,9 @@ impl RnApp {
         let action_new_window = gio::SimpleAction::new("new-window", None);
         self.add_action(&action_new_window);
 
-        action_color_scheme
-            .bind_property("state", &self.style_manager(), "color-scheme")
+        let style_manager = self.style_manager();
+        let color_scheme_binding = action_color_scheme
+            .bind_property("state", &style_manager, "color-scheme")
             .transform_to(move |_, val: glib::Variant| {
                 match val.get::<String>().unwrap().as_str() {
                     "default" => Some(adw::ColorScheme::Default),
@@ -34,9 +35,19 @@ impl RnApp {
                 adw::ColorScheme::ForceDark => Some(String::from("force-dark").to_value()),
                 _ => None,
             })
-            .sync_create()
-            .bidirectional()
-            .build();
+            .sync_create();
+
+        // Desktop lets libadwaita and the action mirror each other. Android has
+        // to translate the system night mode into an effective scheme, so the
+        // action state must keep the user's "default"/forced choice instead of
+        // being overwritten by the effective one.
+        #[cfg(not(target_os = "android"))]
+        color_scheme_binding.bidirectional().build();
+        #[cfg(target_os = "android")]
+        color_scheme_binding.build();
+
+        #[cfg(target_os = "android")]
+        crate::platform::follow_system_color_scheme(&style_manager, &action_color_scheme);
 
         // Quit App
         action_quit.connect_activate(clone!(

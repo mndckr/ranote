@@ -264,15 +264,17 @@ Still requires a machine with the Android SDK, NDK and a device/emulator:
   `just android-app-logcat` showing `GSK_RENDERER=gl` and a GL renderer type;
 - `just android-app-device-check`.
 
-Known device-time gaps, deliberately not solved in ticket #6:
+Remaining device-time gaps:
 
 - The pinned GTK wrap builds gdk-pixbuf without the librsvg SVG loader, so the
   app's SVG icons may not render. The window and adaptive UI do not depend on
   them.
-- Android does not export the Java locale to the POSIX environment, so locale
-  selection is best effort (`LANGUAGE`/`LC_*`/`LANG`, then GLib's language
-  list). Translations are packaged and the reader works when a locale is
-  selected.
+- Android does not export the Java locale to the POSIX environment. Since ticket
+  #17 the Android build reads `persist.sys.locale`/`ro.product.locale` before
+  translation setup; see
+  [`../../docs/android/theme-locale-accessibility.md`](../../docs/android/theme-locale-accessibility.md).
+- The same doc covers the Android night-mode bridge, app-private GSettings
+  persistence and the TalkBack labels for the main controls.
 - Stylus pressure, lifecycle/autosave, IME, and the rest of the spike are later
   tickets, not part of this build wiring. SAF open/save landed in ticket #8 (see
   above).
