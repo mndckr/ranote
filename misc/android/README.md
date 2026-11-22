@@ -87,7 +87,7 @@ Artifacts:
 
 - rnote APK: `misc/android/build/ranote-android.apk`.
 - smoke APK: `misc/android/build/ranote-smoke.apk`.
-- Raw Gradle output: `misc/android/{app,smoke}/_pixiewood/android/app/build/outputs/apk/debug/`.
+- Raw Gradle output: `misc/android/{app,smoke}/.pixiewood/android/app/build/outputs/apk/debug/`.
 - Device report: `misc/android/build/device-check-<timestamp>.txt`.
 
 `android-app-device-check` records the device model and ABI, Android version,

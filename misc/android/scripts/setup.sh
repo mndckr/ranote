@@ -108,7 +108,7 @@ grep -q "revision=\"$GLIB_COMMIT\"" "$manifest" ||
 
 printf 'Configuring %s for aarch64 and x86_64\n' "$APP_ID"
 cd "$APP_SRC_DIR"
-rm -rf _pixiewood
+rm -rf .pixiewood
 "$PIXIEWOOD_DIR/pixiewood" prepare \
   --sdk "$ANDROID_HOME" \
   --toolchain "$ANDROID_NDK_HOME" \

@@ -300,4 +300,4 @@ android-app-perf-off:
 
 [doc('Remove generated Android build output and downloaded subprojects.')]
 android-clean:
-    rm -rf {{ android_dir }}/smoke/_pixiewood {{ android_dir }}/smoke/subprojects {{ android_dir }}/smoke/.buildconfig {{ android_dir }}/smoke/pixiewood.ini {{ android_dir }}/app/_pixiewood {{ android_dir }}/app/subprojects {{ android_dir }}/app/.buildconfig {{ android_dir }}/app/pixiewood.ini {{ android_dir }}/build
+    rm -rf {{ android_dir }}/smoke/.pixiewood {{ android_dir }}/smoke/subprojects {{ android_dir }}/smoke/.buildconfig {{ android_dir }}/smoke/pixiewood.ini {{ android_dir }}/app/.pixiewood {{ android_dir }}/app/subprojects {{ android_dir }}/app/.buildconfig {{ android_dir }}/app/pixiewood.ini {{ android_dir }}/build
