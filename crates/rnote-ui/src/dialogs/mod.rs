@@ -170,36 +170,18 @@ pub(crate) async fn dialog_close_tab(appwindow: &RnAppWindow, tab_page: &adw::Ta
     let canvas_output_file = canvas.output_file();
 
     let mut save_file = canvas_output_file.clone();
-    let save_folder_path = if let Some(p) = canvas
+    let save_folder = canvas
         .output_file()
         .as_ref()
-        .and_then(|f| f.parent()?.path())
-    {
-        Some(p)
-    } else {
-        appwindow.sidebar().workspacebrowser().dir_list_dir()
-    };
+        .and_then(|f| f.parent())
+        .or_else(|| appwindow.sidebar().workspacebrowser().dir_list_file());
 
     // Handle possible file collisions for new files
     if save_file.is_none()
-        && let Some(save_folder_path) = save_folder_path.as_ref()
+        && let Some(save_folder) = save_folder.as_ref()
     {
-        let base_title = canvas.doc_title_display();
-        let mut test_save_file =
-            gio::File::for_path(save_folder_path.join(base_title.clone() + ".rnote"));
-        let mut doc_postfix = 0;
-
-        // increment as long as as files with same name exist
-        while gio::File::query_exists(&test_save_file, gio::Cancellable::NONE) {
-            doc_postfix += 1;
-            test_save_file = gio::File::for_path(save_folder_path.join(
-                base_title.clone()
-                    + crate::utils::FILE_DUP_SUFFIX_DELIM
-                    + &doc_postfix.to_string()
-                    + ".rnote",
-            ));
-        }
-        save_file = Some(test_save_file);
+        save_file =
+            Some(crate::utils::unique_file_in_dir(save_folder, &canvas.doc_title_display(), 0).0);
     }
 
     let save_file_display_name = save_file
@@ -297,45 +279,24 @@ pub(crate) async fn dialog_close_window(appwindow: &RnAppWindow) {
         }
 
         let mut save_file = canvas_output_file.clone();
-        let save_folder_path = if let Some(p) = canvas
+        let save_folder = canvas
             .output_file()
             .as_ref()
-            .and_then(|f| f.parent()?.path())
-        {
-            Some(p)
-        } else {
-            appwindow.sidebar().workspacebrowser().dir_list_dir()
-        };
+            .and_then(|f| f.parent())
+            .or_else(|| appwindow.sidebar().workspacebrowser().dir_list_file());
 
         // Handle possible file collisions for new files
         if canvas_output_file.is_none()
-            && let Some(save_folder_path) = save_folder_path.as_ref()
+            && let Some(save_folder) = save_folder.as_ref()
         {
-            let base_title = canvas.doc_title_display();
-            let mut test_save_file = if doc_postfix == 0 {
-                gio::File::for_path(save_folder_path.join(base_title.clone() + ".rnote"))
-            } else {
-                gio::File::for_path(save_folder_path.join(
-                    base_title.clone()
-                        + crate::utils::FILE_DUP_SUFFIX_DELIM
-                        + &doc_postfix.to_string()
-                        + ".rnote",
-                ))
-            };
-
-            // increment as long as as files with same name exist
-            while gio::File::query_exists(&test_save_file, gio::Cancellable::NONE) {
-                doc_postfix += 1;
-                test_save_file = gio::File::for_path(save_folder_path.join(
-                    base_title.clone()
-                        + crate::utils::FILE_DUP_SUFFIX_DELIM
-                        + &doc_postfix.to_string()
-                        + ".rnote",
-                ));
-            }
-            save_file = Some(test_save_file);
+            let (unique_file, next_postfix) = crate::utils::unique_file_in_dir(
+                save_folder,
+                &canvas.doc_title_display(),
+                doc_postfix,
+            );
+            save_file = Some(unique_file);
             // increment for next iteration
-            doc_postfix += 1;
+            doc_postfix = next_postfix;
         }
 
         let save_file_display_name = save_file
@@ -619,24 +580,18 @@ pub(crate) async fn dialog_edit_selected_workspace(appwindow: &RnAppWindow) {
                     .title(gettext("Change Workspace Directory"))
                     .modal(true)
                     .accept_label(gettext("Select"))
-                    .initial_file(&gio::File::for_path(preview_row.entry().dir()))
+                    .initial_file(&preview_row.entry().dir_file())
                     .build();
 
                 match filedialog.select_folder_future(Some(&appwindow)).await {
                     Ok(selected_file) => {
-                        if let Some(p) = selected_file
-                            .path()
-                        {
-                            let path_string = p.to_string_lossy().to_string();
-                            dir_label.set_label(&path_string);
-                            preview_row.entry().set_dir(path_string);
+                        let dir = crate::utils::file_dir_identity(&selected_file);
+                        dir_label.set_label(&dir);
+                        preview_row.entry().set_dir(dir);
 
-                            // Update the entry row with the file name of the new selected directory
-                            if let Some(file_name) = p.file_name().map(|n| n.to_string_lossy()) {
-                                name_entryrow.set_text(&file_name);
-                            }
-                        } else {
-                            dir_label.set_label(&gettext("- no directory selected -"));
+                        // Update the entry row with the file name of the new selected directory
+                        if let Some(file_name) = selected_file.basename() {
+                            name_entryrow.set_text(&file_name.to_string_lossy());
                         }
                     }
                     Err(e) => {

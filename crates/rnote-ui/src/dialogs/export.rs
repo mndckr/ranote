@@ -50,8 +50,9 @@ pub(crate) async fn dialog_save_doc_as(appwindow: &RnAppWindow, canvas: &RnCanva
     if let Some(output_file) = canvas.output_file() {
         filedialog.set_initial_file(Some(&output_file));
     } else {
-        if let Some(current_workspace_dir) = appwindow.sidebar().workspacebrowser().dir_list_dir() {
-            filedialog.set_initial_folder(Some(&gio::File::for_path(current_workspace_dir)));
+        if let Some(current_workspace_dir) = appwindow.sidebar().workspacebrowser().dir_list_file()
+        {
+            filedialog.set_initial_folder(Some(&current_workspace_dir));
         }
 
         let file_name = canvas.doc_title_display() + ".rnote";
@@ -1149,13 +1150,7 @@ fn get_initial_folder_for_export(appwindow: &RnAppWindow, canvas: &RnCanvas) -> 
     canvas
         .last_export_dir()
         .or_else(|| canvas.output_file().and_then(|p| p.parent()))
-        .or_else(|| {
-            appwindow
-                .sidebar()
-                .workspacebrowser()
-                .dir_list_dir()
-                .map(gio::File::for_path)
-        })
+        .or_else(|| appwindow.sidebar().workspacebrowser().dir_list_file())
 }
 
 fn create_filedialog_export_selection(

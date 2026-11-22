@@ -1,7 +1,7 @@
 // Imports
 use crate::FileType;
 use gettextrs::pgettext;
-use gtk4::{gdk, gio, prelude::*};
+use gtk4::{gdk, gio, glib, prelude::*};
 use palette::convert::IntoColor;
 use path_absolutize::Absolutize;
 use rnote_compose::Color;
@@ -82,6 +82,50 @@ pub(crate) async fn create_replace_file_future(
 /// `file://` URI match, and no `PathBuf` or `path()` is assumed.
 pub(crate) fn files_eq(first: &gio::File, second: &gio::File) -> bool {
     first.equal(second)
+}
+
+/// Resolve a stored workspace directory, which is either a local path or a URI.
+pub(crate) fn file_for_dir_str(dir: &str) -> gio::File {
+    // "://" keeps Windows drive paths ("C:\notes") from parsing as a URI scheme.
+    if dir.contains("://") && glib::uri_parse_scheme(dir).is_some() {
+        gio::File::for_uri(dir)
+    } else {
+        gio::File::for_path(dir)
+    }
+}
+
+/// The stable identity used to store a workspace directory: its local path, or its URI when it has none.
+pub(crate) fn file_dir_identity(file: &gio::File) -> String {
+    file.path()
+        .map(|p| p.to_string_lossy().to_string())
+        .unwrap_or_else(|| file.uri().to_string())
+}
+
+/// Find a non-existing `.rnote` file in `folder` named after `base_title`,
+/// appending the duplicate suffix as needed.
+///
+/// Returns the file and the next free duplicate index, so callers can keep names
+/// unique across several unsaved documents.
+pub(crate) fn unique_file_in_dir(
+    folder: &gio::File,
+    base_title: &str,
+    start_index: u32,
+) -> (gio::File, u32) {
+    let mut index = start_index;
+    loop {
+        let name = if index == 0 {
+            format!("{base_title}.rnote")
+        } else {
+            format!("{base_title}{FILE_DUP_SUFFIX_DELIM}{index}.rnote")
+        };
+        let candidate = folder.child(&name);
+
+        if !candidate.query_exists(gio::Cancellable::NONE) {
+            return (candidate, index + 1);
+        }
+
+        index += 1;
+    }
 }
 
 pub(crate) fn str_from_u8_nul_utf8(utf8_src: &[u8]) -> Result<&str, std::str::Utf8Error> {
@@ -314,6 +358,115 @@ mod tests {
         let by_uri = gio::File::for_uri("file:///tmp/rsnote-files-eq-b.rnote");
 
         assert!(!files_eq(&by_path, &by_uri));
+    }
+
+    #[test]
+    fn workspace_dirs_resolve_from_paths_and_uris() {
+        let path = std::env::temp_dir().join("rsnote-workspace-dir");
+        let by_path = file_for_dir_str(&path.to_string_lossy());
+        let by_uri = file_for_dir_str(&format!("file://{}", path.display()));
+
+        assert!(files_eq(&by_path, &by_uri));
+
+        let content_uri = "content://com.example.documents/tree/notes";
+        assert_eq!(file_for_dir_str(content_uri).uri(), content_uri);
+    }
+
+    #[test]
+    fn windows_drive_paths_are_not_uris() {
+        let file = file_for_dir_str(r"C:\Users\rnote\notes");
+
+        assert!(file.path().is_some());
+        assert!(!file.uri().starts_with("c:"));
+    }
+
+    #[test]
+    fn workspace_dir_identity_keeps_local_paths_and_remote_uris() {
+        let path = std::env::temp_dir().join("rsnote-workspace-dir");
+        assert_eq!(
+            file_dir_identity(&gio::File::for_path(&path)),
+            path.to_string_lossy()
+        );
+
+        let content_uri = "content://com.example.documents/tree/notes";
+        assert_eq!(
+            file_dir_identity(&gio::File::for_uri(content_uri)),
+            content_uri
+        );
+    }
+
+    #[test]
+    fn workspace_dir_lists_entries_through_paths_and_uris() {
+        let dir = std::env::temp_dir().join(format!("rsnote-list-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("note.rnote"), b"rnote").unwrap();
+
+        for folder in [
+            gio::File::for_path(&dir),
+            gio::File::for_uri(&format!("file://{}", dir.display())),
+        ] {
+            glib::MainContext::new().block_on(async {
+                let enumerator = folder
+                    .enumerate_children_future(
+                        "standard::name",
+                        gio::FileQueryInfoFlags::NONE,
+                        glib::Priority::DEFAULT,
+                    )
+                    .await
+                    .unwrap();
+                let entries = enumerator
+                    .next_files_future(10, glib::Priority::DEFAULT)
+                    .await
+                    .unwrap()
+                    .into_iter()
+                    .map(|info| info.name())
+                    .collect::<Vec<_>>();
+                assert_eq!(entries, vec![PathBuf::from("note.rnote")]);
+            });
+        }
+
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn missing_workspace_dir_lists_no_entries() {
+        let folder = gio::File::for_uri(&format!(
+            "file://{}/rsnote-missing-{}",
+            std::env::temp_dir().display(),
+            uuid::Uuid::new_v4()
+        ));
+
+        glib::MainContext::new().block_on(async {
+            assert!(
+                folder
+                    .enumerate_children_future(
+                        "standard::name",
+                        gio::FileQueryInfoFlags::NONE,
+                        glib::Priority::DEFAULT,
+                    )
+                    .await
+                    .is_err()
+            );
+        });
+    }
+
+    #[test]
+    fn unique_file_in_dir_avoids_collisions_for_paths_and_uris() {
+        let dir = std::env::temp_dir().join(format!("rsnote-unique-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("note.rnote"), b"rnote").unwrap();
+        std::fs::write(dir.join("note - 1.rnote"), b"rnote").unwrap();
+
+        for folder in [
+            gio::File::for_path(&dir),
+            gio::File::for_uri(&format!("file://{}", dir.display())),
+        ] {
+            let (file, next) = unique_file_in_dir(&folder, "note", 0);
+            assert_eq!(file.basename().unwrap(), PathBuf::from("note - 2.rnote"));
+            assert_eq!(next, 3);
+        }
+
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]
