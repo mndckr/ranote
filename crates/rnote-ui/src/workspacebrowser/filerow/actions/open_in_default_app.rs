@@ -1,8 +1,8 @@
 // Imports
 use crate::RnAppWindow;
+use crate::i18n::gettext;
 use crate::platform;
 use crate::workspacebrowser::RnFileRow;
-use gettextrs::gettext;
 use gtk4::{gio, gio::prelude::FileExt, glib, glib::clone};
 use tracing::debug;
 

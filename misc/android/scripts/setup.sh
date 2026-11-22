@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Install the pinned Android SDK/NDK, meson and pixiewood, then configure the
-# smoke build. Safe to re-run: it resets the generated meson build directories.
+# selected build (RSNOTE_ANDROID_TARGET=smoke|app). Safe to re-run: it resets the
+# generated meson build directories.
 set -euo pipefail
 
 SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
@@ -14,6 +15,17 @@ require_command curl
 require_command unzip
 require_command ninja
 require_command java
+
+if [ "$ANDROID_TARGET" = "app" ]; then
+  # cargo resolves GTK via pkg-config; msgfmt builds the .mo files (see app/meson.build).
+  require_command pkg-config
+  require_command msgfmt
+  require_command cargo
+  require_command rustup
+  for target in $RUST_TARGETS; do
+    rustup target add "$target" >/dev/null
+  done
+fi
 
 # --- Host checks -------------------------------------------------------------
 
@@ -84,7 +96,7 @@ git -C "$PIXIEWOOD_DIR" checkout --quiet "$PIXIEWOOD_COMMIT"
 
 # --- Pin drift check ---------------------------------------------------------
 
-manifest=$SMOKE_DIR/rsnote-smoke.xml
+manifest=$APP_MANIFEST
 grep -q "revision=\"$GTK_COMMIT\"" "$manifest" ||
   die "$manifest does not pin GTK $GTK_VERSION ($GTK_COMMIT)"
 grep -q "revision=\"$LIBADWAITA_COMMIT\"" "$manifest" ||
@@ -95,17 +107,23 @@ grep -q "revision=\"$GLIB_COMMIT\"" "$manifest" ||
 # --- Configure ---------------------------------------------------------------
 
 printf 'Configuring %s for aarch64 and x86_64\n' "$APP_ID"
-cd "$SMOKE_DIR"
+cd "$APP_SRC_DIR"
 rm -rf _pixiewood
 "$PIXIEWOOD_DIR/pixiewood" prepare \
   --sdk "$ANDROID_HOME" \
   --toolchain "$ANDROID_NDK_HOME" \
   --meson "$MESON_BIN" \
-  rsnote-smoke.xml
+  "$APP_MANIFEST"
+
+if [ "$ANDROID_TARGET" = "app" ]; then
+  NEXT_RECIPE="just android-app-build"
+else
+  NEXT_RECIPE="just android-build"
+fi
 
 cat <<EOF
 
-Android smoke toolchain ready:
+Android toolchain ready ($ANDROID_TARGET):
   GTK             $GTK_VERSION ($GTK_COMMIT)
   libadwaita      $LIBADWAITA_VERSION ($LIBADWAITA_COMMIT)
   GLib            $GLIB_VERSION ($GLIB_COMMIT)
@@ -115,5 +133,5 @@ Android smoke toolchain ready:
   pixiewood       $PIXIEWOOD_COMMIT
   meson           $MESON_VERSION
 
-Next: just android-build
+Next: ${NEXT_RECIPE}
 EOF

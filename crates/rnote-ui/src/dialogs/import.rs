@@ -2,11 +2,11 @@
 
 // Imports
 use crate::canvas::RnCanvas;
+use crate::i18n::gettext;
 use crate::{RnAppWindow, config};
 use adw::prelude::*;
 use anyhow::anyhow;
 use futures::StreamExt;
-use gettextrs::gettext;
 use gtk4::{Builder, Button, FileDialog, FileFilter, Label, ToggleButton, gio, glib, glib::clone};
 use gtk4::{graphene, gsk};
 use hayro::hayro_syntax;

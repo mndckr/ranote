@@ -2,4 +2,8 @@ smoke/_pixiewood/
 smoke/subprojects/
 smoke/pixiewood.ini
 smoke/.buildconfig
+app/_pixiewood/
+app/subprojects/
+app/pixiewood.ini
+app/.buildconfig
 build/

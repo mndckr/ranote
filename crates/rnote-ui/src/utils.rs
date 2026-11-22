@@ -1,6 +1,6 @@
 // Imports
 use crate::FileType;
-use gettextrs::pgettext;
+use crate::i18n::pgettext;
 use gtk4::{gdk, gio, glib, prelude::*};
 use palette::convert::IntoColor;
 use path_absolutize::Absolutize;

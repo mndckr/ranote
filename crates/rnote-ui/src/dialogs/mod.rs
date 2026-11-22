@@ -7,11 +7,11 @@ use crate::appwindow::RnAppWindow;
 use crate::canvas::RnCanvas;
 use crate::canvaswrapper::RnCanvasWrapper;
 use crate::config;
+use crate::i18n::{gettext, pgettext};
 use crate::platform::{self, Feature};
 use crate::workspacebrowser::workspacesbar::RnWorkspaceRow;
 use crate::{RnIconPicker, globals};
 use adw::prelude::*;
-use gettextrs::{gettext, pgettext};
 #[allow(deprecated)]
 use gtk4::ShortcutsWindow;
 use gtk4::{

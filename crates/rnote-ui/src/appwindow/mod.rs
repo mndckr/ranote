@@ -4,13 +4,13 @@ mod appsettings;
 mod imp;
 
 // Imports
+use crate::i18n::gettext;
 use crate::{
     FileType, RnApp, RnCanvas, RnCanvasWrapper, RnMainHeader, RnOverlays, RnSidebar, config,
     dialogs, env,
 };
 use adw::{prelude::*, subclass::prelude::*};
 use core::cell::{Ref, RefMut};
-use gettextrs::gettext;
 use gtk4::{Application, IconTheme, Widget, gdk, gio, glib, glib::clone};
 use p2d::math::Vector2;
 use rnote_compose::Color;

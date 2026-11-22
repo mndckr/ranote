@@ -13,7 +13,7 @@ source "$SCRIPT_DIR/env.sh"
 
 mkdir -p "$BUILD_DIR"
 out=${1:-$BUILD_DIR/device-check-$(date +%Y%m%d-%H%M%S).txt}
-logcat_filter=(AndroidRuntime:E Gtk:V Gdk:V GLib:V rsnote-smoke:V '*:S')
+logcat_filter=(AndroidRuntime:E Gtk:V Gdk:V GLib:V $LOG_TAG:V '*:S')
 
 {
   echo "# collected $(date --iso-8601=seconds)"

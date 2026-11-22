@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Follow the smoke app's logcat stream. Extra arguments go to adb logcat.
+# Follow the selected app's logcat stream. Extra arguments go to adb logcat.
 set -euo pipefail
 
 SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
@@ -10,5 +10,5 @@ source "$SCRIPT_DIR/env.sh"
 [ -x "$ADB" ] || die "adb not found at $ADB (run 'just android-setup')"
 exec "$ADB" logcat -v threadtime \
   AndroidRuntime:E \
-  Gtk:V Gdk:V GLib:V rsnote-smoke:V \
+  Gtk:V Gdk:V GLib:V $LOG_TAG:V \
   '*:S' "$@"

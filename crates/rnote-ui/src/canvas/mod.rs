@@ -9,10 +9,10 @@ pub(crate) use input::reject_pointer_input;
 
 // Imports
 use crate::boxed::WidgetFlagsBoxed;
+use crate::i18n::gettext;
 use crate::{RnAppWindow, config, env};
 use chrono::prelude::*;
 use futures::StreamExt;
-use gettextrs::gettext;
 use gtk4::{
     Adjustment, DropTarget, EventControllerKey, EventControllerLegacy, IMMulticontext,
     PropagationPhase, Scrollable, ScrollablePolicy, ScrolledWindow, Widget, gdk, gio, glib,

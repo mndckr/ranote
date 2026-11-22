@@ -1,8 +1,8 @@
 // Imports
 use crate::RnApp;
+use crate::i18n::gettext;
 use crate::platform::{self, Feature};
 use crate::{RnAppWindow, RnCanvas, config, dialogs};
-use gettextrs::gettext;
 use gtk4::gio::InputStream;
 use gtk4::graphene;
 use gtk4::{
