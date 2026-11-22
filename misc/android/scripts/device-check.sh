@@ -8,7 +8,7 @@ SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck disable=SC1091
 source "$SCRIPT_DIR/env.sh"
 
-[ -x "$ADB" ] || die "adb not found at $ADB (run 'just android-setup')"
+[ -x "$ADB" ] || die "adb not found at $ADB (run 'just android-app-setup')"
 "$ADB" get-state >/dev/null 2>&1 || die "no device or emulator attached"
 "$ADB" shell pm path "$PACKAGE" >/dev/null 2>&1 ||
   die "$PACKAGE is not installed (install it first, e.g. 'just android-app-install')"

@@ -245,59 +245,36 @@ ci-update-actions:
     gh extension install github/gh-actions-lock
     gh actions-lock
 
-# Android smoke build (misc/android). Requires an SDK/NDK-capable Linux host;
-# see misc/android/README.md for pins and prerequisites.
-
-[doc('Install the pinned Android SDK/NDK, meson and pixiewood, then configure the smoke build.')]
-android-setup:
-    {{ android_dir }}/scripts/setup.sh
-
-[doc('Cross-compile GTK + libadwaita and package the smoke APK.')]
-android-build *ARGS:
-    {{ android_dir }}/scripts/build.sh {{ ARGS }}
-
-[doc('Install the built APK on the attached device/emulator and launch it.')]
-android-install:
-    {{ android_dir }}/scripts/install.sh
-
-[doc('Follow filtered logcat from the smoke app.')]
-android-logcat *ARGS:
-    {{ android_dir }}/scripts/logcat.sh {{ ARGS }}
-
-[doc('Collect device, GPU, app version, memory, frame and log data.')]
-android-device-check *ARGS:
-    {{ android_dir }}/scripts/device-check.sh {{ ARGS }}
-
-# Android build of the real rnote UI (misc/android/app). Same SDK/NDK host
-# requirements as the smoke build above.
+# Android build of the real rnote UI (misc/android/app). Requires an
+# SDK/NDK-capable Linux host; see misc/android/README.md for pins.
 
 [doc('Install the pinned Android toolchain and configure the rnote-ui Android build.')]
 android-app-setup:
-    RANOTE_ANDROID_TARGET=app {{ android_dir }}/scripts/setup.sh
+    {{ android_dir }}/scripts/setup.sh
 
 [doc('Cross-compile rnote-ui and package the Android APK.')]
 android-app-build *ARGS:
-    RANOTE_ANDROID_TARGET=app {{ android_dir }}/scripts/build.sh {{ ARGS }}
+    {{ android_dir }}/scripts/build.sh {{ ARGS }}
 
 [doc('Install the rnote-ui APK on the attached device/emulator and launch it.')]
 android-app-install:
-    RANOTE_ANDROID_TARGET=app {{ android_dir }}/scripts/install.sh
+    {{ android_dir }}/scripts/install.sh
 
 [doc('Follow filtered logcat from the rnote-ui Android app.')]
 android-app-logcat *ARGS:
-    RANOTE_ANDROID_TARGET=app {{ android_dir }}/scripts/logcat.sh {{ ARGS }}
+    {{ android_dir }}/scripts/logcat.sh {{ ARGS }}
 
 [doc('Collect device, GPU, app version, memory, frame and log data for rnote-ui.')]
 android-app-device-check *ARGS:
-    RANOTE_ANDROID_TARGET=app {{ android_dir }}/scripts/device-check.sh {{ ARGS }}
+    {{ android_dir }}/scripts/device-check.sh {{ ARGS }}
 
 # Debug-only perf instrumentation (ticket #12). Off by default; never logs note contents.
 android-app-perf-on:
-    RANOTE_ANDROID_TARGET=app {{ android_dir }}/scripts/perf-toggle.sh on
+    {{ android_dir }}/scripts/perf-toggle.sh on
 
 android-app-perf-off:
-    RANOTE_ANDROID_TARGET=app {{ android_dir }}/scripts/perf-toggle.sh off
+    {{ android_dir }}/scripts/perf-toggle.sh off
 
 [doc('Remove generated Android build output and downloaded subprojects.')]
 android-clean:
-    rm -rf {{ android_dir }}/smoke/.pixiewood {{ android_dir }}/smoke/subprojects {{ android_dir }}/smoke/.buildconfig {{ android_dir }}/smoke/pixiewood.ini {{ android_dir }}/app/.pixiewood {{ android_dir }}/app/subprojects {{ android_dir }}/app/.buildconfig {{ android_dir }}/app/pixiewood.ini {{ android_dir }}/build
+    rm -rf {{ android_dir }}/app/.pixiewood {{ android_dir }}/app/subprojects {{ android_dir }}/app/.buildconfig {{ android_dir }}/app/pixiewood.ini {{ android_dir }}/build

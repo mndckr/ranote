@@ -8,8 +8,6 @@ SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck disable=SC1091
 source "$SCRIPT_DIR/env.sh"
 
-[ "$ANDROID_TARGET" = "app" ] ||
-  die "perf instrumentation exists only in the app build (RANOTE_ANDROID_TARGET=app)"
 [ -x "$ADB" ] || die "adb not found at $ADB (run 'just android-app-setup')"
 "$ADB" get-state >/dev/null 2>&1 || die "no device or emulator attached"
 "$ADB" shell pm path "$PACKAGE" >/dev/null 2>&1 ||

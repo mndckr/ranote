@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
-# Shared paths and pinned versions for the Android builds. Sourced, not run.
-# Select the target with RANOTE_ANDROID_TARGET=smoke|app (default: smoke).
+# Shared paths and pinned versions for the rnote-ui Android build. Sourced, not run.
 # shellcheck disable=SC2034  # consumed by the scripts that source this file
 
 ANDROID_ROOT=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
@@ -31,28 +30,12 @@ require_command() {
   command -v "$1" >/dev/null 2>&1 || die "missing '$1' (see misc/android/README.md)"
 }
 
-ANDROID_TARGET=${RANOTE_ANDROID_TARGET:-smoke}
-case "$ANDROID_TARGET" in
-  smoke)
-    APP_SRC_DIR=$ANDROID_ROOT/smoke
-    APP_MANIFEST=$APP_SRC_DIR/ranote-smoke.xml
-    APP_APK=$BUILD_DIR/ranote-smoke.apk
-    APP_ID=org.ranote.Smoke
-    PACKAGE=org.ranote.smoke
-    LOG_TAG=ranote-smoke
-    ;;
-  app)
-    APP_SRC_DIR=$ANDROID_ROOT/app
-    APP_MANIFEST=$APP_SRC_DIR/ranote.xml
-    APP_APK=$BUILD_DIR/ranote-android.apk
-    APP_ID=com.github.flxzt.rnote
-    PACKAGE=com.github.flxzt.rnote
-    LOG_TAG=rnote
-    ;;
-  *)
-    die "unknown RANOTE_ANDROID_TARGET '$ANDROID_TARGET' (expected smoke or app)"
-    ;;
-esac
+APP_SRC_DIR=$ANDROID_ROOT/app
+APP_MANIFEST=$APP_SRC_DIR/ranote.xml
+APP_APK=$BUILD_DIR/ranote-android.apk
+APP_ID=com.github.flxzt.rnote
+PACKAGE=com.github.flxzt.rnote
+LOG_TAG=rnote
 ACTIVITY=org.gtk.android.ToplevelActivity
 
 # Gradle needs a JDK with javac; some distros point `java` at a JRE.

@@ -2,7 +2,7 @@
 <!--
   Pixiewood manifest for the real rnote UI (ticket #6).
 
-  Run from this directory via scripts/setup.sh with RANOTE_ANDROID_TARGET=app.
+  Run from this directory via scripts/setup.sh.
   Revisions match misc/android/versions.env; setup.sh fails on drift.
 
   Pixiewood turns the AppStream mediatype below into a VIEW filter for

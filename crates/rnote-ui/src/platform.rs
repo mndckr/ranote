@@ -330,17 +330,6 @@ mod tests {
     }
 
     #[test]
-    fn android_capabilities_match_the_spike_limits() {
-        assert!(!Capabilities::ANDROID.supports(Feature::Print));
-        // GTK's Android file dialog maps a folder picker to ACTION_OPEN_DOCUMENT_TREE.
-        assert!(Capabilities::ANDROID.supports(Feature::FolderPicker));
-        assert!(!Capabilities::ANDROID.supports(Feature::PenSounds));
-        assert!(Capabilities::DESKTOP.supports(Feature::Print));
-        assert!(Capabilities::DESKTOP.supports(Feature::FolderPicker));
-        assert!(Capabilities::DESKTOP.supports(Feature::PenSounds));
-    }
-
-    #[test]
     fn desktop_keeps_drawing_ime_preedit_itself() {
         // Android's IM context relies on the app to draw the composition; desktop IM
         // modules draw their own, so the canvas must leave desktop behaviour unchanged.

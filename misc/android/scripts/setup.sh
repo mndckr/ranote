@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Install the pinned Android SDK/NDK, meson and pixiewood, then configure the
-# selected build (RANOTE_ANDROID_TARGET=smoke|app). Safe to re-run: it resets the
+# rnote-ui app build. Safe to re-run: it resets the
 # generated meson build directories.
 set -euo pipefail
 
@@ -16,16 +16,14 @@ require_command unzip
 require_command ninja
 require_command java
 
-if [ "$ANDROID_TARGET" = "app" ]; then
-  # cargo resolves GTK via pkg-config; msgfmt builds the .mo files (see app/meson.build).
-  require_command pkg-config
-  require_command msgfmt
-  require_command cargo
-  require_command rustup
-  for target in $RUST_TARGETS; do
-    rustup target add "$target" >/dev/null
-  done
-fi
+# cargo resolves GTK via pkg-config; msgfmt builds the .mo files (see app/meson.build).
+require_command pkg-config
+require_command msgfmt
+require_command cargo
+require_command rustup
+for target in $RUST_TARGETS; do
+  rustup target add "$target" >/dev/null
+done
 
 # --- Host checks -------------------------------------------------------------
 
@@ -117,15 +115,11 @@ rm -rf .pixiewood
   --meson "$MESON_BIN" \
   "$APP_MANIFEST"
 
-if [ "$ANDROID_TARGET" = "app" ]; then
-  NEXT_RECIPE="just android-app-build"
-else
-  NEXT_RECIPE="just android-build"
-fi
+NEXT_RECIPE="just android-app-build"
 
 cat <<EOF
 
-Android toolchain ready ($ANDROID_TARGET):
+Android toolchain ready:
   GTK             $GTK_VERSION ($GTK_COMMIT)
   libadwaita      $LIBADWAITA_VERSION ($LIBADWAITA_COMMIT)
   GLib            $GLIB_VERSION ($GLIB_COMMIT)

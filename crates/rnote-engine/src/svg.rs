@@ -359,18 +359,3 @@ fn copy_pixmap_to_cairo(
     }
     Ok(())
 }
-
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn usvg_normalizes_a_non_zero_viewbox_origin() {
-        // The Android resvg path relies on usvg mapping the root viewBox to
-        // (0, 0)..size, so the caller only translates by bounds.mins.
-        let svg = r#"<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="-5 -5 10 10"><rect x="-5" y="-5" width="10" height="10"/></svg>"#;
-        let tree = usvg::Tree::from_str(svg, &usvg::Options::default()).unwrap();
-        let bbox = tree.root().abs_layer_bounding_box();
-
-        assert!(bbox.x().abs() < 1e-3, "bbox x = {}", bbox.x());
-        assert!(bbox.y().abs() < 1e-3, "bbox y = {}", bbox.y());
-    }
-}

@@ -1,14 +1,10 @@
 # Android builds
 
-Two GTK 4 + libadwaita builds share one pinned toolchain:
+This is the real `rnote-ui` cross-build (ticket #6). It builds the
+desktop Rust workspace unchanged, plus a small meson wrapper that installs the
+app library, translations and GSettings schema into the APK.
 
-- [`smoke/`](smoke) is a throwaway C app that proves the toolchain before rnote
-  is involved (ticket #5). It contains no rnote code.
-- [`app/`](app) is the real `rnote-ui` cross-build (ticket #6). It builds the
-  desktop Rust workspace unchanged, plus a small meson wrapper that installs the
-  app library, translations and GSettings schema into the APK.
-
-Both use [pixiewood][pixiewood] (GTK Android builder), the same builder GTK uses
+It uses [pixiewood][pixiewood] (GTK Android builder), the same builder GTK uses
 in its own CI. It generates the meson cross files, the NDK toolchain file, the
 Gradle project and the AndroidManifest from a small manifest.
 
@@ -60,8 +56,6 @@ instead.
 
 ## Build, install, run
 
-The real rnote UI (ticket #6):
-
 ```sh
 just android-app-setup        # SDK/NDK/meson/pixiewood + meson configure (downloads several GB)
 just android-app-build        # cross-compile rnote-ui + Gradle package
@@ -77,21 +71,10 @@ touch input-to-snapshot latency and RSS without ever touching note contents. See
 [`docs/android/performance.md`](../../docs/android/performance.md) for what it
 records and the 20-page device procedure.
 
-The toolchain smoke app (ticket #5):
-
-```sh
-just android-setup
-just android-build
-just android-install
-just android-logcat
-just android-device-check
-```
-
 Artifacts:
 
 - rnote APK: `misc/android/build/ranote-android.apk`.
-- smoke APK: `misc/android/build/ranote-smoke.apk`.
-- Raw Gradle output: `misc/android/{app,smoke}/.pixiewood/android/app/build/outputs/apk/debug/`.
+- Raw Gradle output: `misc/android/app/.pixiewood/android/app/build/outputs/apk/debug/`.
 - Device report: `misc/android/build/device-check-<timestamp>.txt`.
 
 `android-app-device-check` records the device model and ABI, Android version,
@@ -102,12 +85,12 @@ frame stats have data.
 
 App identity:
 
-| | rnote | smoke |
-|---|---|---|
-| Package | `com.github.flxzt.rnote` | `org.ranote.smoke` |
-| Activity | `org.gtk.android.ToplevelActivity` | same |
-| AppStream id | `com.github.flxzt.rnote` | `org.ranote.Smoke` |
-| MIME | `application/rnote` | none |
+| | rnote |
+|---|---|
+| Package | `com.github.flxzt.rnote` |
+| Activity | `org.gtk.android.ToplevelActivity` |
+| AppStream id | `com.github.flxzt.rnote` |
+| MIME | `application/rnote` |
 
 ## How the rnote app is built
 
@@ -207,14 +190,10 @@ is only needed after changing a pin, because meson does not advance an existing
 misc/android/
   versions.env                 pins (single source of truth)
   scripts/
-    setup.sh build.sh install.sh logcat.sh device-check.sh   shared, target-aware
+    setup.sh build.sh install.sh logcat.sh device-check.sh   shared
     cargo-build.sh             rnote-ui cross-build + gtk-rs pkg-config bridge
     patch-manifest.py          adds the .rnote pathPattern intent filter
-    env.sh                     RANOTE_ANDROID_TARGET=smoke|app selection
-  smoke/
-    meson.build                GTK + libadwaita target, android_exe_type: 'application'
-    src/main.c                 minimal AdwApplication smoke UI
-    ranote-smoke.xml           pixiewood manifest (deps + revisions)
+    env.sh                     shared paths and pinned versions
   app/
     meson.build                rnote-ui cargo target, locales, GSchema
     ranote.xml                 pixiewood manifest (deps + revisions)
@@ -440,29 +419,9 @@ Remaining device-time gaps:
   them.
 - Android does not export the Java locale to the POSIX environment. Since ticket
   #17 the Android build reads `persist.sys.locale`/`ro.product.locale` before
-  translation setup; see
-  [`../../docs/android/theme-locale-accessibility.md`](../../docs/android/theme-locale-accessibility.md).
-- The same doc covers the Android night-mode bridge, app-private GSettings
-  persistence and the TalkBack labels for the main controls.
+  translation setup.
 - Stylus pressure, IME, and the rest of the spike are later tickets, not part
   of this build wiring. SAF open/save landed in ticket #8 and SAF workspace
   folders in ticket #9 (see above).
 
-## CI
-
-[`.github/workflows/android.yml`](../../.github/workflows/android.yml) builds the
-rnote APK on pushes to `main` and on pull requests, in a `fedora:45` container
-on `ubuntu-24.04`:
-
-1. installs the host prerequisites listed above;
-2. runs `just android-app-setup` and `just android-app-build`;
-3. checks that the APK contains `librnote.so` for both ABIs and uploads it as
-   the `ranote-android-apk` artifact (30 days).
-
-Build errors fail the job. No emulator or device tests run in CI, so a green job
-does not mean the app runs; use `just android-app-device-check` on hardware.
-The first run compiles GTK/libadwaita for two ABIs and can take over an hour.
-
-To reproduce CI locally from a clean checkout, install the host prerequisites
-and run the two recipes above; they are the same commands the workflow uses.
 `bash -n misc/android/scripts/*.sh` checks the tooling without an SDK.

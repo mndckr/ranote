@@ -3,10 +3,6 @@
 # Docs: https://gh.io/actions-lockfile
 version: 'v0.0.3'
 workflows:
-    '.github/workflows/android.yml':
-        - 'actions/checkout@v7.0.1'
-        - 'actions/upload-artifact@v7.0.2'
-        - 'dtolnay/rust-toolchain@master'
     '.github/workflows/build_win_installer.yml':
         - 'actions/checkout@v7.0.1'
         - 'actions/upload-artifact@v7.0.2'
