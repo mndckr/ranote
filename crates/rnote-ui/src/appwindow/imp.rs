@@ -115,6 +115,11 @@ impl ObjectImpl for RnAppWindow {
         let obj = self.obj();
         let _windowsettings = obj.settings();
 
+        // Android toplevels are always the size of the display. A size request
+        // larger than that surface clips the UI instead of growing the window.
+        #[cfg(target_os = "android")]
+        obj.set_size_request(-1, -1);
+
         if config::PROFILE == "devel" {
             obj.add_css_class("devel");
         }
@@ -523,6 +528,11 @@ impl RnAppWindow {
     fn setup_split_view(&self) {
         let obj = self.obj();
         let split_view = self.split_view.get();
+
+        // A collapsed split view still reports min-sidebar-width as its
+        // minimum, which is wider than a phone screen.
+        #[cfg(target_os = "android")]
+        split_view.set_min_sidebar_width(320.0);
         let left_sidebar_reveal_toggle = obj.main_header().left_sidebar_reveal_toggle();
         let right_sidebar_reveal_toggle = obj.main_header().right_sidebar_reveal_toggle();
 

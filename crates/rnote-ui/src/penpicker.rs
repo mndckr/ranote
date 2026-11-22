@@ -51,6 +51,15 @@ mod imp {
     }
 
     impl ObjectImpl for RnPenPicker {
+        fn constructed(&self) {
+            self.parent_constructed();
+
+            // The toolbox has a 350px desktop minimum; with undo/redo that is
+            // wider than a phone screen.
+            #[cfg(target_os = "android")]
+            self.toolbox.set_width_request(300);
+        }
+
         fn dispose(&self) {
             self.dispose_template();
             while let Some(child) = self.obj().first_child() {
