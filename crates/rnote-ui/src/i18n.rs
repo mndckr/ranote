@@ -69,6 +69,12 @@ mod catalog {
     }
 
     fn find_mo_file(dir: &Path) -> Option<PathBuf> {
+        // Prefer the package's own catalog over any unrelated .mo file.
+        let preferred = dir.join(format!("{}.mo", crate::config::GETTEXT_PACKAGE));
+        if preferred.is_file() {
+            return Some(preferred);
+        }
+
         fs::read_dir(dir)
             .ok()?
             .filter_map(Result::ok)
@@ -253,6 +259,19 @@ mod catalog {
         #[test]
         fn rejects_garbage() {
             assert!(MoCatalog::parse(b"not a mo file").is_err());
+        }
+
+        #[test]
+        fn find_mo_file_prefers_the_package_catalog() {
+            let dir = std::env::temp_dir().join(format!("rsnote-mo-{}", std::process::id()));
+            std::fs::create_dir_all(&dir).unwrap();
+            std::fs::write(dir.join("de.mo"), b"de").unwrap();
+            let preferred = dir.join(format!("{}.mo", crate::config::GETTEXT_PACKAGE));
+            std::fs::write(&preferred, b"package").unwrap();
+
+            assert_eq!(find_mo_file(&dir), Some(preferred));
+
+            std::fs::remove_dir_all(&dir).unwrap();
         }
     }
 }

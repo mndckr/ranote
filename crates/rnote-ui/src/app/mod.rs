@@ -107,10 +107,9 @@ mod imp {
                 });
             }
 
-            // Android hands "Open with" files over through the platform seam;
-            // desktop never queues one. Route them through the normal open path.
-            let launch_file = crate::platform::take_launch_file();
-            self.new_appwindow_init_show(launch_file);
+            // Android hands "Open with" files over as `GApplication::open` and
+            // GTK emits it right after this activation on a cold start.
+            self.new_appwindow_init_show(None);
         }
 
         fn open(&self, files: &[gio::File], hint: &str) {

@@ -355,9 +355,7 @@ impl RnCanvas {
         file_stem_name: String,
         export_prefs_override: Option<DocPagesExportPrefs>,
     ) -> anyhow::Result<()> {
-        if dir.query_file_type(gio::FileQueryInfoFlags::NONE, gio::Cancellable::NONE)
-            != gio::FileType::Directory
-        {
+        if crate::FileType::lookup_file_type(dir) != crate::FileType::Folder {
             return Err(anyhow::anyhow!(
                 "Supplied target file `{dir:?}` is not a directory."
             ));
@@ -375,14 +373,16 @@ impl RnCanvas {
         let export_bytes = export_bytes_recv.await??;
 
         for (i, page_bytes) in export_bytes.into_iter().enumerate() {
-            // Exporting pages must not overwrite files that are already there,
-            // including on SAF folder trees.
-            let (page_file, _) = crate::utils::unique_file_in_dir(
-                dir,
-                &rnote_engine::utils::doc_pages_files_names(file_stem_name.clone(), i + 1),
-                &file_ext,
-                0,
-            );
+            let page_name =
+                rnote_engine::utils::doc_pages_files_names(file_stem_name.clone(), i + 1);
+            // Desktop re-export overwrites pages, as it always did. SAF folders
+            // get collision-free names because a provider cannot be trusted to
+            // replace existing documents.
+            let page_file = if dir.is_native() {
+                dir.child(format!("{page_name}.{file_ext}"))
+            } else {
+                crate::utils::unique_file_in_dir(dir, &page_name, &file_ext, 0).0
+            };
             crate::utils::write_export_file(page_bytes, &page_file).await?;
         }
 

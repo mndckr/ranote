@@ -28,6 +28,7 @@ What it records:
 |---|---|---|
 | Frame interval | `RnCanvas::snapshot`, after `draw_to_gtk_snapshot` | `frame_summary frames= median_fps= p95_frame_ms= gate=pass\|fail` |
 | Touch input-to-snapshot | non-stylus pointer event time -> next `snapshot` | `touch_latency_summary samples= median_ms= p95_ms=` |
+| Stylus pressure | `gdk::AxisUse::Pressure` on stylus pointer events | `pressure_summary samples= min= max= mean=` |
 | Process RSS | `/proc/self/status` every 10 s | `memory rss_mb=` |
 
 `frame_summary` is emitted at most every 5 s over the last ~600 rendered frames
@@ -39,7 +40,8 @@ the last point the app controls; compositor/present time is not observable from
 the widget. Treat a slow value as real, a fast value as "no worse than this".
 
 Privacy: the recorder logs only numbers and fixed labels. It never receives a
-document, stroke, file name or path, and stylus samples are not taken (deferred).
+document, stroke, file name or path. Stylus latency is still not sampled
+(deferred), but pressure values are recorded as bare numbers.
 Tracing is filtered to the `rnote::perf` target in debug Android builds, so
 normal `RUST_LOG` settings do not hide it. On Android the tracing writer sends
 lines to logcat under the tag `rnote` (app stdout is `/dev/null` there), which is

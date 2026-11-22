@@ -19,7 +19,7 @@ concurrency:
 
 jobs:
   apk:
-    if: github.event.pull_request.draft == false
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     runs-on: ubuntu-24.04
     container: fedora:45
     # The pixiewood build compiles GTK and libadwaita for two ABIs; expect 1h+.

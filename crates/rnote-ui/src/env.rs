@@ -352,6 +352,23 @@ fn exec_parent_dir() -> anyhow::Result<PathBuf> {
         .to_path_buf())
 }
 
+// this returns true when the app is packaged as a relocatable application bundle
+fn macos_is_in_app_bundle(canonicalized_exec_dir: impl AsRef<Path>) -> bool {
+    canonicalized_exec_dir
+        .as_ref()
+        .components()
+        .zip(canonicalized_exec_dir.as_ref().components().skip(1))
+        .any(|(a, b)| {
+            if let Component::Normal(a) = a
+                && let Component::Normal(b) = b
+            {
+                a == OsStr::new("Contents") && b == OsStr::new("MacOS")
+            } else {
+                false
+            }
+        })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -420,21 +437,4 @@ mod tests {
         );
         assert_eq!(cache_home_from_data_dirs(&[]), None);
     }
-}
-
-// this returns true when the app is packaged as a relocatable application bundle
-fn macos_is_in_app_bundle(canonicalized_exec_dir: impl AsRef<Path>) -> bool {
-    canonicalized_exec_dir
-        .as_ref()
-        .components()
-        .zip(canonicalized_exec_dir.as_ref().components().skip(1))
-        .any(|(a, b)| {
-            if let Component::Normal(a) = a
-                && let Component::Normal(b) = b
-            {
-                a == OsStr::new("Contents") && b == OsStr::new("MacOS")
-            } else {
-                false
-            }
-        })
 }

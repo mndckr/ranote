@@ -5,9 +5,9 @@
 //! `perf.on` marker file (see `just android-app-perf-on`).
 //!
 //! It records frame intervals, non-stylus touch input-to-snapshot latency
-//! (a lower bound for input-to-pixel; present time is not observable here) and
-//! process RSS. Only numbers and fixed labels are logged: never note contents,
-//! file names or paths.
+//! (a lower bound for input-to-pixel; present time is not observable here),
+//! stylus pressure samples and process RSS. Only numbers and fixed labels are
+//! logged: never note contents, file names or paths.
 
 use std::collections::VecDeque;
 use std::sync::{Mutex, OnceLock};
@@ -50,12 +50,35 @@ pub(crate) struct LatencyStats {
     pub(crate) p95_ms: f64,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct PressureStats {
+    pub(crate) count: u64,
+    pub(crate) min: f64,
+    pub(crate) max: f64,
+    pub(crate) mean: f64,
+}
+
+impl PressureStats {
+    fn from_accumulator(count: u64, min: f64, max: f64, sum: f64) -> Option<Self> {
+        (count > 0).then(|| Self {
+            count,
+            min,
+            max,
+            mean: sum / count as f64,
+        })
+    }
+}
+
 #[derive(Debug, Default)]
 struct PerfState {
     last_frame: Option<Instant>,
     frames_ms: VecDeque<f64>,
     pending_input: Option<Instant>,
     latencies_ms: VecDeque<f64>,
+    pressure_count: u64,
+    pressure_min: Option<f64>,
+    pressure_max: Option<f64>,
+    pressure_sum: f64,
     last_summary: Option<Instant>,
 }
 
@@ -124,13 +147,27 @@ pub(crate) fn start() {
 }
 
 /// Record a timestamp for a non-stylus pointer event. Stylus latency is deferred
-/// to the stylus verification ticket, so stylus events are not sampled.
+/// to the stylus verification ticket; stylus pressure is sampled separately.
 pub(crate) fn record_input() {
     if !enabled() {
         return;
     }
     if let Ok(mut state) = state().lock() {
         state.pending_input = Some(Instant::now());
+    }
+}
+
+/// Record a stylus pressure sample (0.0..=1.0). Stylus input-to-pixel latency
+/// is still deferred to the stylus verification ticket.
+pub(crate) fn record_pressure(pressure: f64) {
+    if !enabled() || !pressure.is_finite() {
+        return;
+    }
+    if let Ok(mut state) = state().lock() {
+        state.pressure_count += 1;
+        state.pressure_sum += pressure;
+        state.pressure_min = Some(state.pressure_min.map_or(pressure, |min| min.min(pressure)));
+        state.pressure_max = Some(state.pressure_max.map_or(pressure, |max| max.max(pressure)));
     }
 }
 
@@ -170,21 +207,32 @@ pub(crate) fn record_frame() {
             .is_none_or(|last| now.duration_since(last) >= SUMMARY_INTERVAL)
         {
             state.last_summary = Some(now);
+            let pressure = PressureStats::from_accumulator(
+                state.pressure_count,
+                state.pressure_min.unwrap_or_default(),
+                state.pressure_max.unwrap_or_default(),
+                state.pressure_sum,
+            );
+            state.pressure_count = 0;
+            state.pressure_min = None;
+            state.pressure_max = None;
+            state.pressure_sum = 0.0;
             Some((
                 state.frames_ms.iter().copied().collect::<Vec<f64>>(),
                 state.latencies_ms.iter().copied().collect::<Vec<f64>>(),
+                pressure,
             ))
         } else {
             None
         }
     };
 
-    if let Some((frames, latencies)) = summary {
-        log_summary(&frames, &latencies);
+    if let Some((frames, latencies, pressure)) = summary {
+        log_summary(&frames, &latencies, pressure);
     }
 }
 
-fn log_summary(frames_ms: &[f64], latencies_ms: &[f64]) {
+fn log_summary(frames_ms: &[f64], latencies_ms: &[f64], pressure: Option<PressureStats>) {
     let Some(frames) = frame_stats(frames_ms) else {
         return;
     };
@@ -203,6 +251,16 @@ fn log_summary(frames_ms: &[f64], latencies_ms: &[f64]) {
             median_ms = latency.median_ms,
             p95_ms = latency.p95_ms,
             "touch_latency_summary"
+        );
+    }
+    if let Some(pressure) = pressure {
+        info!(
+            target: LOG_TARGET,
+            samples = pressure.count,
+            min = pressure.min,
+            max = pressure.max,
+            mean = pressure.mean,
+            "pressure_summary"
         );
     }
 }
@@ -349,6 +407,16 @@ mod tests {
         assert_eq!(stats.p95_ms, 30.0);
         assert!(latency_stats(&[]).is_none());
         assert!(frame_stats(&[]).is_none());
+    }
+
+    #[test]
+    fn pressure_stats_summarize_the_window() {
+        let stats = PressureStats::from_accumulator(4, 0.1, 0.9, 2.0).unwrap();
+        assert_eq!(stats.count, 4);
+        assert_eq!(stats.min, 0.1);
+        assert_eq!(stats.max, 0.9);
+        assert_eq!(stats.mean, 0.5);
+        assert!(PressureStats::from_accumulator(0, 0.0, 0.0, 0.0).is_none());
     }
 
     #[test]

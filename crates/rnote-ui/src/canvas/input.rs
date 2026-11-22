@@ -40,10 +40,14 @@ pub(crate) fn handle_pointer_controller_event(
 
     let num_touches = canvas.track_touch_event(event);
 
-    // Stylus latency is deferred to the stylus ticket; only touch is sampled.
-    // Recorded before the reject check so pan/zoom touch events, which the
-    // canvas rejects, still get an input-to-pixel sample.
-    if !is_stylus {
+    // Stylus latency is deferred to the stylus ticket, but pressure is sampled.
+    // Touch is recorded before the reject check so pan/zoom touch events, which
+    // the canvas rejects, still get an input-to-pixel sample.
+    if is_stylus {
+        if let Some(pressure) = event.axis(gdk::AxisUse::Pressure) {
+            crate::perf::record_pressure(pressure);
+        }
+    } else {
         crate::perf::record_input();
     }
 

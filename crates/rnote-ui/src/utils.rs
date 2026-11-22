@@ -65,6 +65,12 @@ pub(crate) async fn create_replace_file_future(
     bytes: Vec<u8>,
     file: &gio::File,
 ) -> anyhow::Result<()> {
+    // Native files keep the engine's temp file + fsync + atomic rename path.
+    if let Some(path) = file.path() {
+        return atomic_save_to_file_future(path, bytes).await;
+    }
+
+    // Content URIs (SAF) have no path, so GIO has to write through the provider.
     file.replace_contents_future(
         bytes,
         None,
