@@ -86,7 +86,7 @@ pub(crate) async fn write_export_file(bytes: Vec<u8>, file: &gio::File) -> anyho
         Ok(()) => Ok(()),
         Err(err) => {
             #[cfg(target_os = "android")]
-            if let Err(cleanup_err) = file.delete_future().await {
+            if let Err(cleanup_err) = file.delete_future(glib::Priority::DEFAULT).await {
                 error!("Removing failed export `{file:?}` failed, Err: {cleanup_err}");
             }
             Err(err)
