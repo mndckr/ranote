@@ -66,7 +66,11 @@ pub(crate) async fn create_replace_file_future(
     file: &gio::File,
 ) -> anyhow::Result<()> {
     // Native files keep the engine's temp file + fsync + atomic rename path.
-    if let Some(path) = file.path() {
+    // Content URIs (SAF) are not native, and `path()` on them is the URI path,
+    // not a filesystem path, so GIO has to write through the provider.
+    if file.is_native()
+        && let Some(path) = file.path()
+    {
         return atomic_save_to_file_future(path, bytes).await;
     }
 
@@ -445,6 +449,23 @@ pub(crate) fn path_walk_up_until_exists(path: impl AsRef<Path>) -> anyhow::Resul
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn saves_route_by_is_native_not_by_path() {
+        // On Android, GdkAndroidContentFile::path() returns the URI path
+        // (e.g. "/document/23"), which is not a filesystem path. The atomic
+        // temp-file save must only run for native files.
+        let content =
+            gio::File::for_uri("content://com.example.documents/document/notes%2Fnote.rnote");
+        // Android files keep is_native() FALSE even though path() returns
+        // the URI path there; guarding with is_native() keeps saves off
+        // the bogus path regardless of what path() reports.
+        assert!(!content.is_native());
+
+        let local = gio::File::for_path("/tmp/opencode/note.rnote");
+        assert!(local.is_native());
+        assert!(local.path().is_some());
+    }
 
     #[test]
     fn content_uris_compare_by_document_identity() {
