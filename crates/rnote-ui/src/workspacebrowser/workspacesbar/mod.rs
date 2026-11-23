@@ -270,6 +270,11 @@ impl RnWorkspacesBar {
         // don't canonicalize on windows, because that would convert the path to one with extended length syntax
         if !cfg!(target_os = "windows") {
             for entry in &workspace_list.iter() {
+                // `./` (the schema default) never resolved to anything useful
+                // on Android and `ensure_dir` walks it up to `/`; re-default
+                // it (ADR 0001) before that happens.
+                #[cfg(target_os = "android")]
+                entry.redefault_broken_dir();
                 if let Err(err) = entry.ensure_dir() {
                     warn!(
                         dir = entry.dir(),

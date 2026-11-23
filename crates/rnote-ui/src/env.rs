@@ -169,6 +169,48 @@ fn android_dirs() -> anyhow::Result<AndroidDirs> {
     ))
 }
 
+/// Derives the Android home-equivalent from GLib's resolved `XDG_DATA_HOME`:
+/// the runtime sets it to `<extfiles>/share` via `g_set_user_dirs` (not the
+/// process env), so its parent is the app-specific external files dir.
+#[cfg(any(target_os = "android", test))]
+fn android_home_from_data_home(data_home: &Path) -> Option<PathBuf> {
+    data_home.parent().map(Path::to_path_buf)
+}
+
+/// Sets `$HOME` to the Android home-equivalent (ADR 0001), so all
+/// home-derived paths (`std::env::home_dir()` and GLib's `g_get_home_dir()`)
+/// work unchanged.
+#[cfg(target_os = "android")]
+fn android_setup_home() -> anyhow::Result<()> {
+    let home = android_home_from_data_home(&gtk4::glib::user_data_dir())
+        .context("Unable to derive the home dir from the user data dir")?;
+
+    // 1. The process env: on Android `std::env::home_dir()` is `$HOME`, else `None`.
+    // SAFETY: bionic's setenv is internally locked; this runs before GTK init and
+    // before any rnote thread reads the env.
+    unsafe { std::env::set_var("HOME", &home) };
+
+    // 2. GLib's side. `g_set_user_dirs` is private API, but pixiewood's
+    // existing glib patch exports it - GDK's Android runtime makes the same
+    // call before Rust main, and later calls override earlier ones.
+    let value = std::ffi::CString::new(home.as_os_str().as_encoded_bytes())
+        .context("home dir path contains an interior NUL byte")?;
+    unsafe extern "C" {
+        fn g_set_user_dirs(first_dir_type: *const std::ffi::c_char, ...);
+    }
+    // SAFETY: a single HOME/value pair, NULL-terminated; g_set_user_dirs
+    // takes G_LOCK(g_utils_global) itself.
+    unsafe {
+        g_set_user_dirs(
+            c"HOME".as_ptr(),
+            value.as_ptr(),
+            std::ptr::null::<std::ffi::c_char>(),
+        )
+    };
+
+    Ok(())
+}
+
 /// Android locale tags are BCP-47 (`de-DE`); the translation reader and
 /// libintl look for POSIX names (`de_DE`).
 #[cfg(any(target_os = "android", test))]
@@ -297,6 +339,14 @@ pub(crate) fn setup_env() -> anyhow::Result<()> {
 
         //unsafe { std::env::set_var("RUST_LOG", "rnote=debug,rnote-cli=debug,rnote-engine=debug,rnote-compose=debug") };
     } else if cfg!(target_os = "android") {
+        // ADR 0001: use the app-specific external files dir as `$HOME`, so
+        // drafts, the default workspace and the data dirs resolve. Stays
+        // broken-but-running when this fails, so only log.
+        #[cfg(target_os = "android")]
+        if let Err(e) = android_setup_home() {
+            tracing::error!("Failed to setup the Android home dir, Err: {e:?}");
+        }
+
         // The spike gates on GL: if GL cannot initialize that is a failure with
         // logs, not a reason to fall back to the cairo renderer.
         if std::env::var_os("GSK_RENDERER").is_none() {
@@ -383,6 +433,21 @@ mod tests {
         );
         assert_eq!(android_locale_tag(""), None);
         assert_eq!(android_locale_tag("  "), None);
+    }
+
+    #[test]
+    fn android_home_is_the_parent_of_the_xdg_data_home() {
+        let ext_files = Path::new("/storage/emulated/0/Android/data/com.github.flxzt.rnote/files");
+
+        assert_eq!(
+            android_home_from_data_home(&ext_files.join("share")),
+            Some(ext_files.to_path_buf())
+        );
+    }
+
+    #[test]
+    fn android_home_is_none_when_the_data_home_has_no_parent() {
+        assert_eq!(android_home_from_data_home(Path::new("/")), None);
     }
 
     #[test]

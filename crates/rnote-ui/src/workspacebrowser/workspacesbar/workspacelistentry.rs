@@ -40,16 +40,23 @@ mod imp {
 
     /// The initial workspace directory.
     ///
-    /// Android has no user home directory, so use an app-specific one. It stays
-    /// usable when a SAF provider cannot enumerate its tree.
-    fn default_workspace_dir() -> PathBuf {
+    /// Android's `$HOME` is set at startup to the app-specific external files
+    /// dir (env::setup_env, ADR 0001), so keep the usual `<home>/Documents`
+    /// layout - the workspace browser lists it like any other folder.
+    pub(super) fn default_workspace_dir() -> PathBuf {
         #[cfg(target_os = "android")]
-        if let Ok(data_dir) = crate::env::pkg_data_dir() {
-            let dir = data_dir.join("workspace");
+        {
+            // Keep the pre-fix `./` placeholder when even the home setup failed:
+            // visibly broken beats a mysterious CWD-relative folder.
+            let dir = match std::env::home_dir() {
+                Some(home) => home.join("Documents"),
+                None => return PathBuf::from("./"),
+            };
             let _ = std::fs::create_dir_all(&dir);
             return dir;
         }
 
+        #[cfg(not(target_os = "android"))]
         std::env::home_dir().unwrap_or_else(|| {
             if cfg!(target_os = "windows") {
                 PathBuf::from("C:\\")
@@ -209,6 +216,22 @@ impl RnWorkspaceListEntry {
         }
         Ok(())
     }
+
+    /// The pre-home-dir-fix workspace dirs: `./` (the schema default) and
+    /// `/` (where `ensure_dir` walked it up).
+    #[cfg(any(target_os = "android", test))]
+    fn is_broken_workspace_dir(dir: &str) -> bool {
+        dir == "./" || dir == "/"
+    }
+
+    /// Re-defaults the dir when it is the broken pre-home-dir-fix fallback.
+    /// The settings re-save the re-defaulted dir; no migration.
+    #[cfg(target_os = "android")]
+    pub(super) fn redefault_broken_dir(&self) {
+        if Self::is_broken_workspace_dir(&self.dir()) {
+            self.set_dir(imp::default_workspace_dir().to_string_lossy().to_string());
+        }
+    }
 }
 
 impl glib::variant::StaticVariantType for RnWorkspaceListEntry {
@@ -234,6 +257,18 @@ impl glib::variant::FromVariant for RnWorkspaceListEntry {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn broken_workspace_dirs_are_the_placeholder_and_root() {
+        assert!(RnWorkspaceListEntry::is_broken_workspace_dir("./"));
+        assert!(RnWorkspaceListEntry::is_broken_workspace_dir("/"));
+        assert!(!RnWorkspaceListEntry::is_broken_workspace_dir(
+            "/storage/emulated/0/Android/data/com.github.flxzt.rnote/files/Documents"
+        ));
+        assert!(!RnWorkspaceListEntry::is_broken_workspace_dir(
+            "content://media/external/file/42"
+        ));
+    }
 
     #[test]
     fn ensure_dir_walks_up_missing_local_paths() {
