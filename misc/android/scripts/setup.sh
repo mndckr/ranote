@@ -92,6 +92,11 @@ git -C "$PIXIEWOOD_DIR" checkout --quiet "$PIXIEWOOD_COMMIT"
 "$PIXIEWOOD_DIR/pixiewood" --version >/dev/null 2>&1 ||
   die "pixiewood cannot load; install its Perl/AppStream dependencies (see README)"
 
+# The GTK JNI thread fix is declared in the manifest but ships from this repo;
+# pixiewood stages manifest patches from its own prepare/wraps asset dir.
+mkdir -p "$PIXIEWOOD_DIR/prepare/wraps/gtk"
+cp "$SCRIPT_DIR/../patches/android-jni-thread.patch" "$PIXIEWOOD_DIR/prepare/wraps/gtk/"
+
 # --- Pin drift check ---------------------------------------------------------
 
 manifest=$APP_MANIFEST
