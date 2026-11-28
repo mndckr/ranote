@@ -30,6 +30,7 @@
     <gtk revision="bd25f1e2dc2c2fbf3b8864e61afe642910ba359c">
       <patch>android-jni-thread</patch>
       <patch>android-filechooser-alerts</patch>
+      <patch>android-stylus-dispatch</patch>
     </gtk>
     <libadwaita revision="dab4459427c9e518af87d1c54fe1f1f410bc9752"/>
   </dependencies>

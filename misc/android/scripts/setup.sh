@@ -97,6 +97,7 @@ git -C "$PIXIEWOOD_DIR" checkout --quiet "$PIXIEWOOD_COMMIT"
 mkdir -p "$PIXIEWOOD_DIR/prepare/wraps/gtk" "$PIXIEWOOD_DIR/prepare/wraps/glib"
 cp "$SCRIPT_DIR/../patches/android-jni-thread.patch" \
    "$SCRIPT_DIR/../patches/android-filechooser-alerts.patch" \
+   "$SCRIPT_DIR/../patches/android-stylus-dispatch.patch" \
    "$PIXIEWOOD_DIR/prepare/wraps/gtk/"
 cp "$SCRIPT_DIR/../patches/android-ndk-zlib.patch" \
    "$PIXIEWOOD_DIR/prepare/wraps/glib/"

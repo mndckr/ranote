@@ -909,11 +909,15 @@ impl RnCanvas {
             gdk::EventType::TouchEnd | gdk::EventType::TouchCancel => {
                 active_touches.remove(&event.event_sequence());
             }
-            _ => {
+            // Only touch events carry a sequence; asking for one on a pointer
+            // event returns NULL and panics the gdk4-rs boxed wrapper in debug
+            // builds.
+            gdk::EventType::TouchUpdate => {
                 if let Some(last_seen) = active_touches.get_mut(&event.event_sequence()) {
                     *last_seen = now;
                 }
             }
+            _ => {}
         }
 
         active_touches.len() as u32

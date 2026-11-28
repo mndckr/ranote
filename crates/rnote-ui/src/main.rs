@@ -77,6 +77,10 @@ fn main() -> glib::ExitCode {
     if let Err(e) = setup_tracing() {
         eprintln!("failed to setup tracing, Err: {e:?}");
     }
+    // The default hook writes to stderr, which is /dev/null in an Android app
+    // process; log through tracing so panics still reach logcat.
+    #[cfg(target_os = "android")]
+    std::panic::set_hook(Box::new(|info| tracing::error!("{info}")));
     if let Err(e) = env::setup_env() {
         eprintln!("failed to setup env, Err: {e:?}");
     }

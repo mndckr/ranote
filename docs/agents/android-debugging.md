@@ -42,6 +42,9 @@ $ADB -s $S logcat -d --pid=$($ADB -s $S shell pidof com.github.flxzt.rnote | tr 
   instrumentation use `tracing::error!` — or set `RUST_LOG=rnote=debug` when
   launching. `eprintln!`/stdout is `/dev/null` in the app process; it will
   never appear in logcat.
+- Rust panics are routed through tracing to logcat by the Android panic hook in
+  `crates/rnote-ui/src/main.rs`; without that hook the panic message goes to
+  `/dev/null` and only the tombstone/backtrace survives.
 - GSettings on Android uses the keyfile backend under
   `/storage/emulated/0/Android/data/com.github.flxzt.rnote/files/etc/` —
   readable via `run-as com.github.flxzt.rnote`, not via plain `adb shell`.
@@ -55,3 +58,11 @@ $ADB -s $S logcat -d --pid=$($ADB -s $S shell pidof com.github.flxzt.rnote | tr 
   the property chain.
 - `GtkGesture` is abstract in gtk4-rs 0.11 and cannot be instantiated; use a
   concrete subclass or track state from the existing controllers.
+- A pen digitiser's MotionEvent source is
+  `AINPUT_SOURCE_TOUCHSCREEN | AINPUT_SOURCE_STYLUS`, not plain
+  `AINPUT_SOURCE_STYLUS`. GTK 4.22.5 checks the touchscreen bit first, so pen
+  events become `GdkTouchEvent`s with no `GdkDeviceTool` and rnote treats the
+  pen as a finger. Check `dumpsys input` ("RecentQueue" source) and
+  `getevent -lp` (pen device with `BTN_TOOL_PEN`) to confirm; the
+  [`android-stylus-dispatch` patch](../../misc/android/patches/android-stylus-dispatch.patch)
+  fixes the dispatch.

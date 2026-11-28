@@ -1,9 +1,9 @@
 # Android stylus and touch input
 
 Status: wired against GTK's Android backend and covered by synthetic tests.
-Real-tablet verification (pressure, tilt, buttons, eraser, palm rejection) is
-deferred to the stylus sign-off ticket (#24). Nothing in this document claims
-those were measured on hardware.
+On a Lenovo Tab P11 (LineageOS 22.2) the pen now reaches the canvas as a
+pointer with usable pressure; the rest of the hardware checklist (tilt,
+buttons, eraser, palm rejection) is still open in #24.
 
 The desktop code paths are unchanged apart from the touch-count fix described
 below, which only affects touch drawing on touch-screen desktops. The only
@@ -20,6 +20,15 @@ Checked against the pinned GTK commit in
   tool), which is exactly what `event_is_stylus()` tests.
   (`gdk/android/gdkandroidseat.c`, tool construction and
   `gdk_android_seat_get_device_tool()`.)
+- A digitiser that also supports a stylus reports
+  `AINPUT_SOURCE_TOUCHSCREEN | AINPUT_SOURCE_STYLUS` as its event source
+  (`TouchInputMapper::configureInputDevice()` ORs in `AINPUT_SOURCE_STYLUS`).
+  GTK 4.22.5 tests the touchscreen source first, so by itself it would turn
+  every pen event into a `GdkTouchEvent` with a `NULL` tool. The
+  [`android-stylus-dispatch` patch](../../misc/android/patches/android-stylus-dispatch.patch)
+  tests the tool type first and keeps pen/eraser events on the pointer path.
+  Without it `event_is_stylus()` is false and pressure, barrel buttons and the
+  eraser never reach the canvas.
 - Stylus tools advertise `X`, `Y`, `PRESSURE`, `DISTANCE`, `XTILT` and `YTILT`
   axes (`gdk_android_seat_stylus_flags`). Pressure is normalized to `[0, 1]`
   from Android's `MotionRange`; if the range cannot be read, the axis stays
@@ -71,6 +80,10 @@ Palm rejection is best-effort:
 - A stroke starts when the first finger of a two-finger gesture lands, so a pan
   may leave a short mark. Drawing stops as soon as the second finger is down;
   watch for stray marks on the device checklist.
+- `track_touch_event()` asks for a `GdkEventSequence` only on touch events
+  (`TouchBegin/Update/End/Cancel`). gdk4-rs wraps the sequence in a non-optional
+  boxed type, so calling it for a pointer event passes `NULL` and panics in a
+  debug build.
 
 ## Synthetic tests
 
@@ -115,9 +128,9 @@ Run on a tablet with an active stylus. Use the build/install/log commands from
 
 ## Blockers
 
-- **No Android stylus device available in this environment.** Pressure, tilt,
-  buttons, eraser and palm rejection are wired but unverified on hardware.
-  Verification is tracked by #24.
+- **Hardware verification is still open.** A real tablet is available now, but
+  pressure, tilt, buttons, eraser and palm rejection still need the acceptance
+  run below. Verification is tracked by #24.
 - **GTK Android has no proximity events.** Palm rejection while the pen only
   hovers cannot be implemented from GTK's event stream. Re-check when GTK
   emits hover enter/exit or proximity events; the relevant code is commented
