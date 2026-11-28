@@ -92,12 +92,14 @@ git -C "$PIXIEWOOD_DIR" checkout --quiet "$PIXIEWOOD_COMMIT"
 "$PIXIEWOOD_DIR/pixiewood" --version >/dev/null 2>&1 ||
   die "pixiewood cannot load; install its Perl/AppStream dependencies (see README)"
 
-# The GTK patches are declared in the manifest but ship from this repo;
-# pixiewood stages manifest patches from its own prepare/wraps asset dir.
-mkdir -p "$PIXIEWOOD_DIR/prepare/wraps/gtk"
+# The GTK and GLib patches are declared in the manifest but ship from this
+# repo; pixiewood stages manifest patches from its own prepare/wraps asset dir.
+mkdir -p "$PIXIEWOOD_DIR/prepare/wraps/gtk" "$PIXIEWOOD_DIR/prepare/wraps/glib"
 cp "$SCRIPT_DIR/../patches/android-jni-thread.patch" \
    "$SCRIPT_DIR/../patches/android-filechooser-alerts.patch" \
    "$PIXIEWOOD_DIR/prepare/wraps/gtk/"
+cp "$SCRIPT_DIR/../patches/android-ndk-zlib.patch" \
+   "$PIXIEWOOD_DIR/prepare/wraps/glib/"
 
 # --- Pin drift check ---------------------------------------------------------
 

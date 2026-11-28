@@ -42,9 +42,9 @@ dropped the `svg-support` option and added libcurl/libfyaml dependencies.
 
 Linux x86_64. The build needs the pixiewood host tools plus a JDK:
 
-- openSUSE Tumbleweed: `perl(Glib) perl(Glib::Object::Introspection) perl(IPC::Run) perl(JSON) perl(Set::Scalar) perl(XML::LibXML) perl(XML::LibXSLT) typelib(AppStream) java-21-openjdk-devel gcc gcc-c++ glib2-devel glib2-tools libxml2-tools ninja sassc glslc unzip curl git python3 just pkg-config gettext`
+- openSUSE Tumbleweed: `perl-Glib perl-Glib-Object-Introspection perl-IPC-Run perl-JSON perl-Set-Scalar perl-XML-LibXML perl-XML-LibXSLT typelib-1_0-AppStream-1.0 java-21-openjdk-devel gcc gcc-c++ glib2-devel glib2-tools libxml2-tools ninja sassc glslc unzip curl git python3 just pkg-config gettext`
 - Fedora: `perl-Glib perl-Glib-Object-Introspection perl-IPC-Run perl-JSON perl-Set-Scalar perl-XML-LibXML perl-XML-LibXSLT appstream java-21-openjdk-devel gcc gcc-c++ glib2-devel glib2-tools libxml2-utils ninja-build sassc glslc unzip curl git python3 python3-pip just pkg-config gettext`
-- Debian/Ubuntu: `libglib-perl libglib-object-introspection-perl libipc-run-perl libjson-perl libset-scalar-perl libxml-libxml-perl libxml-libxslt-perl gir1.2-appstream openjdk-21-jdk build-essential libglib2.0-dev-bin libxml2-utils ninja-build sassc glslc unzip curl git python3 python3-venv just pkg-config gettext`
+- Debian/Ubuntu: `libglib-perl libglib-object-introspection-perl libipc-run-perl libjson-perl libset-scalar-perl libxml-libxml-perl libxml-libxslt-perl gir1.2-appstream-1.0 openjdk-21-jdk build-essential libglib2.0-dev-bin libxml2-utils ninja-build sassc glslc unzip curl git python3 python3-venv just pkg-config gettext`
 
 The app build also needs `cargo` and `rustup` in `PATH`.
 
@@ -146,6 +146,10 @@ Android runtime copies the assets to the app files dir and points
   features are split; Android enables only `ui`, which compiles a silent
   `AudioPlayer` stub. `Capabilities` also reports pen sounds unsupported, so
   the UI toggle cannot turn them on.
+- **zlib**: the NDK ships `zlib.h` and `libz.so` but no `zlib.pc`, and meson
+  does not search the host pkg-config for cross targets. GLib's subproject
+  gets [`patches/android-ndk-zlib.patch`](patches/android-ndk-zlib.patch) and
+  links `-lz` from the NDK instead of looking up the `zlib` module.
 - **renderer**: `env::setup_env()` sets `GSK_RENDERER=gl` on Android before GTK
   starts. There is no cairo fallback: if GL cannot initialize, that is a failed
   gate with logs.

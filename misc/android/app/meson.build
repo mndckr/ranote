@@ -79,7 +79,13 @@ config_rs = configure_file(
     configuration: config_conf,
 )
 run_command(
-    'cp',
+    # Both ABIs configure in parallel and write this one file. cp opens a
+    # destination it just saw appear with O_EXCL and fails, so write a unique
+    # temp file and rename it instead.
+    'sh',
+    '-c',
+    'tmp=$(mktemp "$1.XXXXXX") && cp "$1" "$tmp" && chmod 644 "$tmp" && mv -f "$tmp" "$2"',
+    'sh',
     config_rs,
     ui_src_dir / 'config.rs',
     check: true,

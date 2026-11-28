@@ -23,6 +23,7 @@
   <dependencies>
     <glib revision="802d1893cd5f4928991b5295263f1700311a3490">
       <patch>hack</patch>
+      <patch>android-ndk-zlib</patch>
     </glib>
     <cairo/>
     <fontconfig revision="6d0a98982ec351c165c9224c8b7dbdfca3010e47"/>
