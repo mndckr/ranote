@@ -7,6 +7,7 @@ build_folder := "_mesonbuild"
 flatpak_app_folder := "_flatpak_app"
 flatpak_repo_folder := "_flatpak_repo"
 msys_env_prefix_path := "C:\\msys64\\ucrt64"
+android_dir := "misc/android"
 
 [private]
 linux_distr := `grep -o -E '^ID=([a-zA-Z0-9_]*)$' -r /etc/os-release | cut -d= -f2 | tr '[:upper:]' '[:lower:]'`
@@ -243,3 +244,37 @@ Make sure to authenticate and allow access first (`gh auth login --web --clipboa
 ci-update-actions:
     gh extension install github/gh-actions-lock
     gh actions-lock
+
+# Android build of the real rnote UI (misc/android/app). Requires an
+# SDK/NDK-capable Linux host; see misc/android/README.md for pins.
+
+[doc('Install the pinned Android toolchain and configure the rnote-ui Android build.')]
+android-app-setup:
+    {{ android_dir }}/scripts/setup.sh
+
+[doc('Cross-compile rnote-ui and package the Android APK.')]
+android-app-build *ARGS:
+    {{ android_dir }}/scripts/build.sh {{ ARGS }}
+
+[doc('Install the rnote-ui APK on the attached device/emulator and launch it.')]
+android-app-install:
+    {{ android_dir }}/scripts/install.sh
+
+[doc('Follow filtered logcat from the rnote-ui Android app.')]
+android-app-logcat *ARGS:
+    {{ android_dir }}/scripts/logcat.sh {{ ARGS }}
+
+[doc('Collect device, GPU, app version, memory, frame and log data for rnote-ui.')]
+android-app-device-check *ARGS:
+    {{ android_dir }}/scripts/device-check.sh {{ ARGS }}
+
+# Debug-only perf instrumentation (ticket #12). Off by default; never logs note contents.
+android-app-perf-on:
+    {{ android_dir }}/scripts/perf-toggle.sh on
+
+android-app-perf-off:
+    {{ android_dir }}/scripts/perf-toggle.sh off
+
+[doc('Remove generated Android build output and downloaded subprojects.')]
+android-clean:
+    rm -rf {{ android_dir }}/app/.pixiewood {{ android_dir }}/app/subprojects {{ android_dir }}/app/.buildconfig {{ android_dir }}/app/pixiewood.ini {{ android_dir }}/build

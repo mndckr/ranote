@@ -1,0 +1,19 @@
+diff --git a/gtk/gtkfilechooserwidget.c b/gtk/gtkfilechooserwidget.c
+index e88860b..bf83cdb 100644
+--- a/gtk/gtkfilechooserwidget.c
++++ b/gtk/gtkfilechooserwidget.c
+@@ -723,6 +723,14 @@ error_message (GtkFileChooserWidget *impl,
+   GtkWindow *parent = get_toplevel (GTK_WIDGET (impl));
+   GtkAlertDialog *dialog;
+ 
++  /* The delegate chooser of GtkFileChooserNative is never mapped while the
++   * native picker runs, yet its async folder loads can still fail (e.g. an
++   * initial folder the app cannot enumerate). Don't surface those as alert
++   * dialogs, which would present a new toplevel window (visible on Android
++   * as a flash page) unless the chooser is actually on screen. */
++  if (!gtk_widget_get_mapped (GTK_WIDGET (impl)))
++    return;
++
+   dialog = gtk_alert_dialog_new ("%s", msg);
+   gtk_alert_dialog_set_detail (dialog, detail);
+   gtk_alert_dialog_show (dialog, parent);

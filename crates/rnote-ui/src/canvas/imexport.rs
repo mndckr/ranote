@@ -12,31 +12,27 @@ use rnote_engine::strokes::Stroke;
 use rnote_engine::strokes::resize::ImageSizeOption;
 use std::fs;
 use std::ops::Range;
-use std::path::Path;
 use tracing::{debug, error};
 
 impl RnCanvas {
     /// Load the bytes of a `.rnote` file and imports it into the engine.
     ///
-    /// `file_path` is optional but needs to be supplied when the origin file should be tracked.
+    /// `file` is optional but needs to be supplied when the origin file should be tracked.
     ///
     /// The function returns `WidgetFlags` instead of emitting the `handle_signal_flags` signal, because a signal
     /// handler might not yet be connected when this function is called.
-    pub(crate) async fn load_in_rnote_bytes<P>(
+    pub(crate) async fn load_in_rnote_bytes(
         &self,
         bytes: Vec<u8>,
-        file_path: Option<P>,
-    ) -> anyhow::Result<WidgetFlags>
-    where
-        P: AsRef<Path>,
-    {
+        file: Option<gio::File>,
+    ) -> anyhow::Result<WidgetFlags> {
         let engine_snapshot = EngineSnapshot::load_from_rnote_bytes(bytes).await?;
         let mut widget_flags = self.engine_mut().load_snapshot(engine_snapshot);
         widget_flags |= self
             .engine_mut()
             .set_scale_factor(self.scale_factor() as f64);
 
-        self.set_output_file(file_path.map(gio::File::for_path));
+        self.set_output_file(file);
         self.dismiss_output_file_modified_toast();
         self.set_unsaved_changes(false);
         self.set_empty(false);
@@ -55,7 +51,7 @@ impl RnCanvas {
         };
         let (bytes, _) = output_file.load_bytes_future().await?;
         let widget_flags = self
-            .load_in_rnote_bytes(bytes.to_vec(), output_file.path())
+            .load_in_rnote_bytes(bytes.to_vec(), Some(output_file))
             .await?;
         self.emit_handle_widget_flags(widget_flags);
         Ok(())
@@ -273,18 +269,14 @@ impl RnCanvas {
     /// - `Ok(true)` if saving was successful
     /// - `Ok(false)` if a save was already in progress (and thus this function didn't do anything)
     /// - `Err(e)` when saving failed in any way
-    #[tracing::instrument(skip_all, fields(path = format!("{:?}", file.path())))]
+    #[tracing::instrument(skip_all, fields(uri = %file.uri()))]
     pub(crate) async fn save_document_to_file(&self, file: &gio::File) -> anyhow::Result<bool> {
-        let filepath = file
-            .path()
-            .ok_or_else(|| anyhow::anyhow!("Could not get a path for file: `{file:?}`."))?;
-
         if self.save_in_progress() {
             debug!("Saving document is already in progress, skipping..");
             return Ok(false);
         }
         self.set_save_in_progress(true);
-        debug!("Saving document to {}..", filepath.display());
+        debug!("Saving document to `{file:?}`..");
 
         let basename = file.basename().ok_or_else(|| {
             self.set_save_in_progress(false);
@@ -294,12 +286,10 @@ impl RnCanvas {
             .engine_ref()
             .save_as_rnote_bytes(basename.to_string_lossy().to_string());
 
-        let mut skip_set_output_file = false;
-        if let Some(output_filepath) = self.output_file().and_then(|f| f.path())
-            && crate::utils::paths_abs_eq(output_filepath, &filepath).unwrap_or(false)
-        {
-            skip_set_output_file = true;
-        }
+        let skip_set_output_file = self
+            .output_file()
+            .map(|output_file| crate::utils::files_eq(&output_file, file))
+            .unwrap_or(false);
 
         self.dismiss_output_file_modified_toast();
 
@@ -307,7 +297,7 @@ impl RnCanvas {
             let bytes = rnote_bytes_receiver.await??;
             // The `output_file_expect_write` should theoretically be reset to `false` by the file watcher later.
             self.set_output_file_expect_write(true);
-            crate::utils::atomic_save_to_file_future(&filepath, bytes).await
+            crate::utils::create_replace_file_future(bytes, file).await
         };
 
         if let Err(err) = file_write_operation.await {
@@ -348,7 +338,7 @@ impl RnCanvas {
     ) -> anyhow::Result<()> {
         let export_bytes = self.engine_ref().export_doc(title, export_prefs_override);
 
-        crate::utils::create_replace_file_future(export_bytes.await??, file).await?;
+        crate::utils::write_export_file(export_bytes.await??, file).await?;
 
         self.set_last_export_dir(file.parent());
 
@@ -357,7 +347,7 @@ impl RnCanvas {
 
     /// Exports document pages
     /// `file_stem_name`: the stem name of the created files. This is extended by an enumeration of the page number and
-    /// file extension overwrites existing files with the same name!
+    /// the file extension. Existing files are not overwritten; a duplicate suffix is appended instead.
     pub(crate) async fn export_doc_pages(
         &self,
         appwindow: &RnAppWindow,
@@ -365,9 +355,7 @@ impl RnCanvas {
         file_stem_name: String,
         export_prefs_override: Option<DocPagesExportPrefs>,
     ) -> anyhow::Result<()> {
-        if dir.query_file_type(gio::FileQueryInfoFlags::NONE, gio::Cancellable::NONE)
-            != gio::FileType::Directory
-        {
+        if crate::FileType::lookup_file_type(dir) != crate::FileType::Folder {
             return Err(anyhow::anyhow!(
                 "Supplied target file `{dir:?}` is not a directory."
             ));
@@ -385,15 +373,17 @@ impl RnCanvas {
         let export_bytes = export_bytes_recv.await??;
 
         for (i, page_bytes) in export_bytes.into_iter().enumerate() {
-            crate::utils::create_replace_file_future(
-                page_bytes,
-                &dir.child(
-                    &(rnote_engine::utils::doc_pages_files_names(file_stem_name.clone(), i + 1)
-                        + "."
-                        + &file_ext),
-                ),
-            )
-            .await?;
+            let page_name =
+                rnote_engine::utils::doc_pages_files_names(file_stem_name.clone(), i + 1);
+            // Desktop re-export overwrites pages, as it always did. SAF folders
+            // get collision-free names because a provider cannot be trusted to
+            // replace existing documents.
+            let page_file = if dir.is_native() {
+                dir.child(format!("{page_name}.{file_ext}"))
+            } else {
+                crate::utils::unique_file_in_dir(dir, &page_name, &file_ext, 0).0
+            };
+            crate::utils::write_export_file(page_bytes, &page_file).await?;
         }
 
         self.set_last_export_dir(Some(dir.clone()));
@@ -409,7 +399,7 @@ impl RnCanvas {
         let export_bytes = self.engine_ref().export_selection(export_prefs_override);
 
         if let Some(export_bytes) = export_bytes.await?? {
-            crate::utils::create_replace_file_future(export_bytes, file).await?;
+            crate::utils::write_export_file(export_bytes, file).await?;
         }
 
         self.set_last_export_dir(file.parent());

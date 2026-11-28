@@ -16,7 +16,6 @@ use gtk4::{
     Button, CompositeTemplate, ListBox, ScrolledWindow, Widget, gdk, gio, glib, glib::clone,
     prelude::*, subclass::prelude::*,
 };
-use std::path::PathBuf;
 use tracing::{error, warn};
 
 mod imp {
@@ -207,10 +206,10 @@ impl RnWorkspacesBar {
     }
 
     #[allow(unused)]
-    pub(crate) fn set_selected_workspace_dir(&self, dir: PathBuf) {
+    pub(crate) fn set_selected_workspace_file(&self, dir: gio::File) {
         if let Some(i) = self.selected_workspace_index() {
             let entry = self.imp().workspace_list.remove(i as usize);
-            entry.set_dir(dir.to_string_lossy().into());
+            entry.set_dir(crate::utils::file_dir_identity(&dir));
             self.imp().workspace_list.insert(i as usize, entry);
 
             self.select_workspace_by_index(i);
@@ -271,6 +270,11 @@ impl RnWorkspacesBar {
         // don't canonicalize on windows, because that would convert the path to one with extended length syntax
         if !cfg!(target_os = "windows") {
             for entry in &workspace_list.iter() {
+                // `./` (the schema default) never resolved to anything useful
+                // on Android and `ensure_dir` walks it up to `/`; re-default
+                // it (ADR 0001) before that happens.
+                #[cfg(target_os = "android")]
+                entry.redefault_broken_dir();
                 if let Err(err) = entry.ensure_dir() {
                     warn!(
                         dir = entry.dir(),
@@ -329,7 +333,7 @@ impl RnWorkspacesBar {
                     appwindow
                         .sidebar()
                         .workspacebrowser()
-                        .set_dir_list_file(Some(&gio::File::for_path(dir)));
+                        .set_dir_list_file(Some(&entry.dir_file()));
                 }
             }
         ));

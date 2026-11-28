@@ -1,0 +1,44 @@
+diff --git a/gdk/android/gdkandroidevents.c b/gdk/android/gdkandroidevents.c
+index ac808b0..4315926 100644
+--- a/gdk/android/gdkandroidevents.c
++++ b/gdk/android/gdkandroidevents.c
+@@ -157,6 +157,9 @@ gdk_android_events_handle_motion_event (GdkAndroidSurface *surface,
+ 
+   gint32 masked_action = AMotionEvent_getAction (event) & AMOTION_EVENT_ACTION_MASK;
+   gint32 src = AInputEvent_getSource (event);
++  gint32 tool_type = AMotionEvent_getToolType (event, 0);
++  gboolean is_stylus = tool_type == AMOTION_EVENT_TOOL_TYPE_STYLUS ||
++                       tool_type == AMOTION_EVENT_TOOL_TYPE_ERASER;
+ 
+   GdkDevice *dev = gdk_seat_get_pointer ((GdkSeat *) display->seat);
+   GdkAndroidDevice *dev_impl = GDK_ANDROID_DEVICE (dev);
+@@ -177,7 +180,10 @@ gdk_android_events_handle_motion_event (GdkAndroidSurface *surface,
+       gdk_android_device_keyboard_maybe_update_surface_focus ((GdkAndroidDevice *) keyboard, surface);
+     }
+ 
+-  if (GDK_ANDROID_EVENTS_COMPARE_MASK (src, AINPUT_SOURCE_TOUCHSCREEN))
++  // A pen device may report TOUCHSCREEN | STYLUS as its event source (the
++  // Lenovo Precision Pen does). Touchscreen events have no tool, so route
++  // stylus events through the pointer path to keep their GdkDeviceTool.
++  if (!is_stylus && GDK_ANDROID_EVENTS_COMPARE_MASK (src, AINPUT_SOURCE_TOUCHSCREEN))
+     {
+       // I think it might be better to drop the down time and only rely on the event identity
+       guint base_sequence = gdk_android_surface_long_hash ((guint64) AMotionEvent_getDownTime (event));
+@@ -223,7 +229,6 @@ gdk_android_events_handle_motion_event (GdkAndroidSurface *surface,
+           // button up event, as GDK does not
+           // provide a cancel mechanism for
+           // button events.
+-          gint32 tool_type = AMotionEvent_getToolType (event, 0);
+           if (tool_type == AMOTION_EVENT_TOOL_TYPE_MOUSE || tool_type == AMOTION_EVENT_TOOL_TYPE_FINGER)
+             {
+               gint32 button_state = AMotionEvent_getButtonState (event);
+@@ -290,8 +295,7 @@ gdk_android_events_handle_motion_event (GdkAndroidSurface *surface,
+       else if (masked_action == AMOTION_EVENT_ACTION_MOVE ||
+                masked_action == AMOTION_EVENT_ACTION_HOVER_MOVE)
+         {
+-          GdkDeviceTool *tool = gdk_android_seat_get_device_tool (display->seat,
+-                                                                  AMotionEvent_getToolType (event, 0));
++          GdkDeviceTool *tool = gdk_android_seat_get_device_tool (display->seat, tool_type);
+           GdkEvent *ev = gdk_motion_event_new ((GdkSurface *) surface, dev, tool,
+                                                time, mods,
+                                                x, y,

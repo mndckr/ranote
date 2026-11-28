@@ -1,7 +1,8 @@
 // Imports
 use crate::RnApp;
+use crate::i18n::gettext;
+use crate::platform::{self, Feature};
 use crate::{RnAppWindow, RnCanvas, config, dialogs};
-use gettextrs::gettext;
 use gtk4::gio::InputStream;
 use gtk4::graphene;
 use gtk4::{
@@ -107,6 +108,7 @@ impl RnAppWindow {
         self.add_action(&action_open_doc);
         let action_print_doc = gio::SimpleAction::new("print-doc", None);
         self.add_action(&action_print_doc);
+        platform::apply_capabilities(platform::capabilities(), Feature::Print, &action_print_doc);
         let action_import_file = gio::SimpleAction::new("import-file", None);
         self.add_action(&action_import_file);
         let action_export_doc = gio::SimpleAction::new("export-doc", None);
@@ -130,6 +132,17 @@ impl RnAppWindow {
         let action_clipboard_paste_contextmenu =
             gio::SimpleAction::new("clipboard-paste-contextmenu", None);
         self.add_action(&action_clipboard_paste_contextmenu);
+        // The internal fallback only mirrors this app's own copy; another app
+        // taking over the clipboard invalidates it.
+        #[cfg(target_os = "android")]
+        self.clipboard().connect_changed(|clipboard| {
+            if !clipboard
+                .formats()
+                .contain_mime_type(StrokeContent::MIME_TYPE)
+            {
+                crate::clipboard::clear();
+            }
+        });
         let action_active_tab_move_left = gio::SimpleAction::new("active-tab-move-left", None);
         self.add_action(&action_active_tab_move_left);
         let action_active_tab_move_right = gio::SimpleAction::new("active-tab-move-right", None);
@@ -177,8 +190,42 @@ impl RnAppWindow {
         self.add_action(&action_touch_drawing);
         let action_focus_mode = gio::PropertyAction::new("focus-mode", self, "focus-mode");
         self.add_action(&action_focus_mode);
-        let action_pen_sounds = gio::PropertyAction::new("pen-sounds", self, "pen-sounds");
+        // A gio::PropertyAction's "enabled" is read-only, so pen-sounds is a
+        // stateful SimpleAction kept in sync with the window property.
+        let action_pen_sounds = gio::SimpleAction::new_stateful(
+            "pen-sounds",
+            None,
+            &self.property::<bool>("pen-sounds").to_variant(),
+        );
         self.add_action(&action_pen_sounds);
+        platform::apply_capabilities(
+            platform::capabilities(),
+            Feature::PenSounds,
+            &action_pen_sounds,
+        );
+        action_pen_sounds.connect_activate(clone!(
+            #[weak(rename_to = appwindow)]
+            self,
+            move |action, _| {
+                let pen_sounds = action
+                    .state()
+                    .and_then(|state| state.get::<bool>())
+                    .unwrap_or(false);
+                action.set_state(&(!pen_sounds).to_variant());
+                appwindow.set_property("pen-sounds", !pen_sounds);
+            }
+        ));
+        self.connect_notify_local(
+            Some("pen-sounds"),
+            clone!(
+                #[weak]
+                action_pen_sounds,
+                move |appwindow, _| {
+                    action_pen_sounds
+                        .set_state(&appwindow.property::<bool>("pen-sounds").to_variant());
+                }
+            ),
+        );
         let action_snap_positions =
             gio::PropertyAction::new("snap-positions", self, "snap-positions");
         self.add_action(&action_snap_positions);
@@ -1074,6 +1121,11 @@ impl RnAppWindow {
                     }
                 };
 
+                // GTK's Android backend drops custom formats when claiming the system
+                // clipboard; keep them for paste inside rnote.
+                #[cfg(target_os = "android")]
+                store_unsupported_formats(&content);
+
                 let gdk_content_provider = gdk::ContentProvider::new_union(content.into_iter().map(|(data, mime_type)| {
                     gdk::ContentProvider::for_bytes(mime_type.as_str(), &glib::Bytes::from_owned(data))
                 }).collect::<Vec<gdk::ContentProvider>>().as_slice());
@@ -1105,6 +1157,11 @@ impl RnAppWindow {
                         return;
                     }
                 };
+                // GTK's Android backend drops custom formats when claiming the system
+                // clipboard; keep them for paste inside rnote.
+                #[cfg(target_os = "android")]
+                store_unsupported_formats(&content);
+
                 let gdk_content_provider = gdk::ContentProvider::new_union(content.into_iter().map(|(data, mime_type)| {
                     gdk::ContentProvider::for_bytes(mime_type.as_str(), &glib::Bytes::from_owned(data))
                 }).collect::<Vec<gdk::ContentProvider>>().as_slice());
@@ -1309,68 +1366,70 @@ impl RnAppWindow {
                         StrokeContent::MIME_TYPE
                     );
 
-                    match appwindow
-                        .clipboard()
-                        .read_future(&[StrokeContent::MIME_TYPE], glib::source::Priority::DEFAULT)
-                        .await
-                    {
-                        Ok((input_stream, _)) => {
-                            let acc = collect_clipboard_data(input_stream).await;
+                    // Android's system clipboard cannot carry rnote's custom
+                    // format, so prefer the app-internal copy made by copy/cut.
+                    #[cfg(target_os = "android")]
+                    let internal_acc = crate::clipboard::stroke_content();
+                    #[cfg(not(target_os = "android"))]
+                    let internal_acc: Option<Vec<u8>> = None;
 
-                            if !acc.is_empty() {
-                                match crate::utils::str_from_u8_nul_utf8(&acc) {
-                                    Ok(json_string) => {
-                                        let resize_argument =
-                                            ImageSizeOption::ResizeImage(Resize {
-                                                width: canvas
-                                                    .engine_ref()
-                                                    .document
-                                                    .config
-                                                    .format
-                                                    .width(),
-                                                height: canvas
-                                                    .engine_ref()
-                                                    .document
-                                                    .config
-                                                    .format
-                                                    .height(),
-                                                layout_fixed_width: canvas
-                                                    .engine_ref()
-                                                    .document
-                                                    .config
-                                                    .layout
-                                                    .is_fixed_width(),
-                                                max_viewpoint: None,
-                                                restrain_to_viewport: false,
-                                                respect_borders: appwindow.respect_borders(),
-                                            });
-                                        if let Err(e) = canvas
-                                            .insert_stroke_content(
-                                                json_string.to_string(),
-                                                resize_argument,
-                                                target_pos,
-                                            )
-                                            .await
-                                        {
-                                            error!(
-                                                "Failed to insert stroke content while pasting as `{}`, Err: {e:?}",
-                                                StrokeContent::MIME_TYPE
-                                            );
-                                        }
-                                    }
-                                    Err(e) => error!(
-                                        "Failed to read stroke content &str from clipboard data, Err: {e:?}"
-                                    ),
-                                }
+                    let acc = if let Some(acc) = internal_acc {
+                        acc
+                    } else {
+                        match appwindow
+                            .clipboard()
+                            .read_future(
+                                &[StrokeContent::MIME_TYPE],
+                                glib::source::Priority::DEFAULT,
+                            )
+                            .await
+                        {
+                            Ok((input_stream, _)) => collect_clipboard_data(input_stream).await,
+                            Err(e) => {
+                                error!(
+                                    "Reading clipboard failed while pasting as `{}`, Err: {e:?}",
+                                    StrokeContent::MIME_TYPE
+                                );
+                                return;
                             }
                         }
-                        Err(e) => {
-                            error!(
-                                "Reading clipboard failed while pasting as `{}`, Err: {e:?}",
-                                StrokeContent::MIME_TYPE
-                            );
-                        }
                     };
+
+                    if !acc.is_empty() {
+                        match crate::utils::str_from_u8_nul_utf8(&acc) {
+                            Ok(json_string) => {
+                                let resize_argument = ImageSizeOption::ResizeImage(Resize {
+                                    width: canvas.engine_ref().document.config.format.width(),
+                                    height: canvas.engine_ref().document.config.format.height(),
+                                    layout_fixed_width: canvas
+                                        .engine_ref()
+                                        .document
+                                        .config
+                                        .layout
+                                        .is_fixed_width(),
+                                    max_viewpoint: None,
+                                    restrain_to_viewport: false,
+                                    respect_borders: appwindow.respect_borders(),
+                                });
+                                if let Err(e) = canvas
+                                    .insert_stroke_content(
+                                        json_string.to_string(),
+                                        resize_argument,
+                                        target_pos,
+                                    )
+                                    .await
+                                {
+                                    error!(
+                                        "Failed to insert stroke content while pasting as `{}`, Err: {e:?}",
+                                        StrokeContent::MIME_TYPE
+                                    );
+                                }
+                            }
+                            Err(e) => error!(
+                                "Failed to read stroke content &str from clipboard data, Err: {e:?}"
+                            ),
+                        }
+                    }
                 }
             ));
         } else if content_formats.contain_mime_type("image/svg+xml") {
@@ -1500,6 +1559,18 @@ impl RnAppWindow {
                 content_formats.mime_types()
             );
         }
+    }
+}
+
+/// GTK's Android backend drops custom formats when claiming the system
+/// clipboard; keep them so paste inside rnote still works.
+#[cfg(target_os = "android")]
+fn store_unsupported_formats(content: &[(Vec<u8>, String)]) {
+    if content
+        .iter()
+        .any(|(_, mime_type)| !crate::clipboard::android_remote_supports(mime_type))
+    {
+        crate::clipboard::store(content.to_vec());
     }
 }
 

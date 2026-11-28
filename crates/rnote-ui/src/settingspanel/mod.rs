@@ -9,9 +9,9 @@ pub(crate) use penshortcutrow::RnPenShortcutRow;
 use rnote_compose::ext::Vector2Ext;
 
 // Imports
+use crate::i18n::{gettext, pgettext};
 use crate::{RnAppWindow, RnIconPicker, RnUnitEntry};
 use adw::prelude::*;
-use gettextrs::{gettext, pgettext};
 use gtk4::{
     Adjustment, Button, ColorDialogButton, CompositeTemplate, MenuButton, ScrolledWindow,
     StringList, ToggleButton, Widget, gdk, glib, glib::clone, subclass::prelude::*,

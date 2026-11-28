@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  AppStream metadata for the Android rnote app. Pixiewood reads the id, name,
+  version and mimetype from here to generate the AndroidManifest.
+-->
+<component type="desktop-application" xmlns="https://specifications.freedesktop.org/metainfo/1.0">
+  <id>com.github.flxzt.rnote</id>
+  <name>Rnote</name>
+  <summary>Sketch and take handwritten notes</summary>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>GPL-3.0-or-later</project_license>
+  <developer id="com.github.flxzt">
+    <name>The Rnote Authors</name>
+  </developer>
+  <launchable type="desktop-id">com.github.flxzt.rnote.desktop</launchable>
+  <url type="homepage">https://rnote.flxzt.net</url>
+  <url type="bugtracker">https://github.com/flxzt/rnote/issues</url>
+  <content_rating type="oars-1.1"/>
+  <provides>
+    <mediatype>application/rnote</mediatype>
+  </provides>
+  <description>
+    <p>
+      Rnote is a vector-based drawing app for sketching, handwritten notes and to
+      annotate documents and pictures.
+    </p>
+    <p>
+      This is the Android spike build of the existing GTK application. The file
+      format is still unstable and might change between versions.
+    </p>
+  </description>
+  <releases>
+    <release version="0.15.0" date="2026-11-22"/>
+  </releases>
+</component>

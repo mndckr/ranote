@@ -713,7 +713,11 @@ mod imp {
                         let canvas = canvaswrapper.canvas();
 
                         if signal.current_event().is_none_or(|event| {
-                            reject_pointer_input(&event, canvas.touch_drawing())
+                            reject_pointer_input(
+                                &event,
+                                canvas.touch_drawing(),
+                                canvas.active_touches(),
+                            )
                         }) {
                             // Reject certain kinds of input (same behavior as canvas)
                             return;

@@ -1,0 +1,54 @@
+#!/usr/bin/env bash
+# Shared paths and pinned versions for the rnote-ui Android build. Sourced, not run.
+# shellcheck disable=SC2034  # consumed by the scripts that source this file
+
+ANDROID_ROOT=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
+
+# shellcheck source=../versions.env
+# shellcheck disable=SC1091
+source "$ANDROID_ROOT/versions.env"
+
+# SDK location: honour ANDROID_HOME, else the conventional per-user path.
+ANDROID_HOME=${ANDROID_HOME:-$HOME/Android/Sdk}
+ANDROID_NDK_HOME=${ANDROID_NDK_HOME:-$ANDROID_HOME/ndk/$NDK_VERSION}
+ANDROID_NDK_ROOT=${ANDROID_NDK_ROOT:-$ANDROID_NDK_HOME}
+
+CACHE_DIR=${RANOTE_ANDROID_CACHE:-${XDG_CACHE_HOME:-$HOME/.cache}/ranote-android}
+PIXIEWOOD_DIR=$CACHE_DIR/pixiewood
+MESON_BIN=$CACHE_DIR/venv/bin/meson
+SDKMANAGER=$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager
+ADB=$ANDROID_HOME/platform-tools/adb
+
+BUILD_DIR=$ANDROID_ROOT/build
+
+die() {
+  printf 'error: %s\n' "$*" >&2
+  exit 1
+}
+
+require_command() {
+  command -v "$1" >/dev/null 2>&1 || die "missing '$1' (see misc/android/README.md)"
+}
+
+APP_SRC_DIR=$ANDROID_ROOT/app
+APP_MANIFEST=$APP_SRC_DIR/ranote.xml
+APP_APK=$BUILD_DIR/ranote-android.apk
+APP_ID=com.github.flxzt.rnote
+PACKAGE=com.github.flxzt.rnote
+LOG_TAG=rnote
+ACTIVITY=org.gtk.android.ToplevelActivity
+
+# Gradle needs a JDK with javac; some distros point `java` at a JRE.
+if [ -z "${JAVA_HOME:-}" ]; then
+  for dir in /usr/lib64/jvm/java-"$JDK_VERSION"-openjdk* /usr/lib/jvm/java-"$JDK_VERSION"-openjdk*; do
+    [ -x "$dir/bin/javac" ] && JAVA_HOME=$dir && break
+  done
+  if [ -z "${JAVA_HOME:-}" ] && command -v javac >/dev/null 2>&1; then
+    JAVA_HOME=$(dirname "$(dirname "$(readlink -f "$(command -v javac)")")")
+  fi
+  [ -n "${JAVA_HOME:-}" ] && export JAVA_HOME
+fi
+
+# Pixiewood and the pinned meson venv shadow system copies.
+PATH=$CACHE_DIR/venv/bin:$PIXIEWOOD_DIR:$ANDROID_HOME/platform-tools:$PATH
+export PATH

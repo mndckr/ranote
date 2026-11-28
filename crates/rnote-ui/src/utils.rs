@@ -1,9 +1,7 @@
 // Imports
 use crate::FileType;
-use anyhow::Context;
-use futures::AsyncWriteExt;
-use gettextrs::pgettext;
-use gtk4::{gdk, gio, prelude::*};
+use crate::i18n::pgettext;
+use gtk4::{gdk, gio, glib, prelude::*};
 use palette::convert::IntoColor;
 use path_absolutize::Absolutize;
 use rnote_compose::Color;
@@ -61,34 +59,181 @@ pub(crate) fn find_drafts() -> Vec<PathBuf> {
 }
 
 /// Create a new file or replace if it already exists, asynchronously.
+///
+/// Uses `gio::File`, so it works for local paths and URIs without requiring `file.path()`.
 pub(crate) async fn create_replace_file_future(
     bytes: Vec<u8>,
     file: &gio::File,
 ) -> anyhow::Result<()> {
-    let Some(file_path) = file.path() else {
-        return Err(anyhow::anyhow!(
-            "Can't create-replace file that has no path."
-        ));
-    };
-    let mut write_file = async_fs::OpenOptions::new()
-        .create(true)
-        .truncate(true)
-        .write(true)
-        .open(&file_path)
-        .await
-        .context(format!(
-            "Failed to create/open/truncate file for path '{}'",
-            file_path.display()
-        ))?;
-    write_file.write_all(&bytes).await.context(format!(
-        "Failed to write bytes to file with path '{}'",
-        file_path.display()
-    ))?;
-    write_file.sync_all().await.context(format!(
-        "Failed to sync file after writing with path '{}'",
-        file_path.display()
-    ))?;
+    // Native files keep the engine's temp file + fsync + atomic rename path.
+    // Content URIs (SAF) are not native, and `path()` on them is the URI path,
+    // not a filesystem path, so GIO has to write through the provider.
+    if file.is_native()
+        && let Some(path) = file.path()
+    {
+        return atomic_save_to_file_future(path, bytes).await;
+    }
+
+    // Content URIs (SAF) have no path, so GIO has to write through the provider.
+    file.replace_contents_future(
+        bytes,
+        None,
+        false,
+        gio::FileCreateFlags::REPLACE_DESTINATION,
+    )
+    .await
+    .map_err(|(_, err)| anyhow::anyhow!("Failed to write file `{file:?}`, Err: {err}"))?;
     Ok(())
+}
+
+/// Write fully prepared export bytes.
+///
+/// A failed export must not leave a partial file. On Android the SAF
+/// create-document picker only ever returns a freshly created document, so
+/// removing it on failure cannot touch existing user data.
+pub(crate) async fn write_export_file(bytes: Vec<u8>, file: &gio::File) -> anyhow::Result<()> {
+    match create_replace_file_future(bytes, file).await {
+        Ok(()) => Ok(()),
+        Err(err) => {
+            #[cfg(target_os = "android")]
+            if let Err(cleanup_err) = file.delete_future(glib::Priority::DEFAULT).await {
+                error!("Removing failed export `{file:?}` failed, Err: {cleanup_err}");
+            }
+            Err(err)
+        }
+    }
+}
+
+/// Whether two [`gio::File`]s refer to the same document.
+///
+/// Compares the file identity GIO derives from the URI, so a local path and its
+/// `file://` URI match, and no `PathBuf` or `path()` is assumed.
+pub(crate) fn files_eq(first: &gio::File, second: &gio::File) -> bool {
+    first.equal(second)
+}
+
+/// The directory a document is displayed as living in.
+///
+/// Content URIs have no parent directory, so show their provider instead.
+pub(crate) fn folder_display(file: &gio::File) -> Option<String> {
+    if let Some(parent) = file.parent() {
+        return Some(
+            parent
+                .path()
+                .map(|p| p.display().to_string())
+                .unwrap_or_else(|| parent.uri().to_string()),
+        );
+    }
+
+    file.uri()
+        .strip_prefix("content://")
+        .and_then(|rest| rest.split('/').next())
+        .map(|authority| format!("content://{authority}"))
+}
+
+/// The local path to watch for external changes, if the document has one.
+///
+/// GdkAndroidContentFile reports its URI path as `path()`, which is not a
+/// filesystem path, so non-native files must not be watched with `notify`.
+pub(crate) fn local_watch_path(file: &gio::File) -> Option<PathBuf> {
+    if !file.is_native() {
+        return None;
+    }
+    file.path()
+}
+
+/// Give a save-as target the `.rnote` extension.
+///
+/// Android's create-document picker ignores GtkFileDialog's suggested name, so a
+/// new document can come back without the extension that identifies it on reopen.
+pub(crate) fn ensure_rnote_extension(file: gio::File) -> gio::File {
+    if !file.has_uri_scheme("content") {
+        return file;
+    }
+    let Some(name) = file.basename() else {
+        return file;
+    };
+    let name = name.to_string_lossy();
+    if name.is_empty() || name.to_ascii_lowercase().ends_with(".rnote") {
+        return file;
+    }
+
+    match file.set_display_name(&format!("{name}.rnote"), gio::Cancellable::NONE) {
+        Ok(renamed) => renamed,
+        Err(err) => {
+            error!(
+                "Renaming save target `{}` to add the .rnote extension failed: {err}",
+                file.uri()
+            );
+            file
+        }
+    }
+}
+
+/// Resolve a stored workspace directory, which is either a local path or a URI.
+pub(crate) fn file_for_dir_str(dir: &str) -> gio::File {
+    // "://" keeps Windows drive paths ("C:\notes") from parsing as a URI scheme.
+    if dir.contains("://") && glib::uri_parse_scheme(dir).is_some() {
+        gio::File::for_uri(dir)
+    } else {
+        gio::File::for_path(dir)
+    }
+}
+
+/// The stable identity used to store a workspace directory: its local path, or its URI when it has none.
+///
+/// Android content files report the URI path from `path()`, which is not a
+/// filesystem path, so only native files are stored as paths.
+pub(crate) fn file_dir_identity(file: &gio::File) -> String {
+    if file.is_native()
+        && let Some(path) = file.path()
+    {
+        return path.to_string_lossy().to_string();
+    }
+    file.uri().to_string()
+}
+
+/// Find a non-existing file in `folder` named after `base_title` and `file_ext`,
+/// appending the duplicate suffix as needed.
+///
+/// Returns the file and the next free duplicate index, so callers can keep names
+/// unique across several unsaved documents.
+pub(crate) fn unique_file_in_dir(
+    folder: &gio::File,
+    base_title: &str,
+    file_ext: &str,
+    start_index: u32,
+) -> (gio::File, u32) {
+    let mut index = start_index;
+    loop {
+        let name = if index == 0 {
+            format!("{base_title}.{file_ext}")
+        } else {
+            format!("{base_title}{FILE_DUP_SUFFIX_DELIM}{index}.{file_ext}")
+        };
+        let candidate = folder.child(&name);
+
+        if !candidate.query_exists(gio::Cancellable::NONE) {
+            return (candidate, index + 1);
+        }
+
+        index += 1;
+    }
+}
+
+/// The location shown for a selected file: its local path, or its URI when it has none.
+pub(crate) fn file_location_label(file: &gio::File) -> String {
+    file.path()
+        .map(|p| p.to_string_lossy().to_string())
+        .unwrap_or_else(|| file.uri().to_string())
+}
+
+/// What an export success toast should open: the containing folder for local
+/// files, or the file itself when there is no browsable folder (content URI).
+pub(crate) fn export_view_target(file: &gio::File) -> gio::File {
+    file.parent()
+        .filter(|parent| parent.path().is_some())
+        .unwrap_or_else(|| file.clone())
 }
 
 pub(crate) fn str_from_u8_nul_utf8(utf8_src: &[u8]) -> Result<&str, std::str::Utf8Error> {
@@ -299,4 +444,296 @@ pub(crate) fn path_walk_up_until_exists(path: impl AsRef<Path>) -> anyhow::Resul
             .ok_or_else(|| anyhow::anyhow!("Path {} has no parent", path.display()))?;
     }
     Ok(path)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn saves_route_by_is_native_not_by_path() {
+        // On Android, GdkAndroidContentFile::path() returns the URI path
+        // (e.g. "/document/23"), which is not a filesystem path. The atomic
+        // temp-file save must only run for native files.
+        let content =
+            gio::File::for_uri("content://com.example.documents/document/notes%2Fnote.rnote");
+        // Android files keep is_native() FALSE even though path() returns
+        // the URI path there; guarding with is_native() keeps saves off
+        // the bogus path regardless of what path() reports.
+        assert!(!content.is_native());
+
+        let local = gio::File::for_path("/tmp/opencode/note.rnote");
+        assert!(local.is_native());
+        assert!(local.path().is_some());
+    }
+
+    #[test]
+    fn content_uris_compare_by_document_identity() {
+        let note =
+            gio::File::for_uri("content://com.example.documents/document/notes%2Fnote.rnote");
+        let same =
+            gio::File::for_uri("content://com.example.documents/document/notes%2Fnote.rnote");
+        let other =
+            gio::File::for_uri("content://com.example.documents/document/notes%2Fother.rnote");
+
+        assert!(files_eq(&note, &same));
+        assert!(!files_eq(&note, &other));
+    }
+
+    #[test]
+    fn folder_display_uses_content_authority_without_a_parent() {
+        assert_eq!(
+            folder_display(&gio::File::for_uri(
+                "content://com.example.documents/document/notes%2Fnote.rnote"
+            )),
+            Some("content://com.example.documents".to_string())
+        );
+    }
+
+    #[test]
+    fn folder_display_uses_the_parent_for_local_files() {
+        let dir = std::env::temp_dir().join("ranote-folder-display");
+        let file = gio::File::for_path(dir.join("note.rnote"));
+
+        assert_eq!(
+            folder_display(&file),
+            Some(dir.display().to_string().trim_end_matches('/').to_string())
+        );
+    }
+
+    #[test]
+    fn only_local_files_get_a_file_watcher() {
+        let path = std::env::temp_dir().join("ranote-watch.rnote");
+        assert_eq!(
+            local_watch_path(&gio::File::for_path(&path)),
+            Some(path.clone())
+        );
+        assert_eq!(
+            local_watch_path(&gio::File::for_uri(&format!("file://{}", path.display()))),
+            Some(path)
+        );
+        assert_eq!(
+            local_watch_path(&gio::File::for_uri(
+                "content://com.example.documents/document/notes%2Fnote.rnote"
+            )),
+            None
+        );
+    }
+
+    #[test]
+    fn save_target_keeps_local_paths_and_nameless_documents() {
+        let path = std::env::temp_dir().join("ranote-save-target.rnote");
+        assert_eq!(
+            ensure_rnote_extension(gio::File::for_path(&path)).uri(),
+            gio::File::for_path(&path).uri()
+        );
+
+        let content = gio::File::for_uri("content://com.example.documents/document/notes");
+        assert_eq!(ensure_rnote_extension(content.clone()).uri(), content.uri());
+    }
+
+    #[test]
+    fn files_eq_matches_path_and_uri_for_same_file() {
+        let path = std::env::temp_dir().join("ranote-files-eq-doc.rnote");
+        let by_path = gio::File::for_path(&path);
+        let by_uri = gio::File::for_uri(&format!("file://{}", path.display()));
+
+        assert!(files_eq(&by_path, &by_uri));
+        assert!(files_eq(&by_uri, &by_path));
+    }
+
+    #[test]
+    fn files_eq_distinct_for_different_files() {
+        let by_path = gio::File::for_path(std::env::temp_dir().join("ranote-files-eq-a.rnote"));
+        let by_uri = gio::File::for_uri("file:///tmp/ranote-files-eq-b.rnote");
+
+        assert!(!files_eq(&by_path, &by_uri));
+    }
+
+    #[test]
+    fn workspace_dirs_resolve_from_paths_and_uris() {
+        let path = std::env::temp_dir().join("ranote-workspace-dir");
+        let by_path = file_for_dir_str(&path.to_string_lossy());
+        let by_uri = file_for_dir_str(&format!("file://{}", path.display()));
+
+        assert!(files_eq(&by_path, &by_uri));
+
+        let content_uri = "content://com.example.documents/tree/notes";
+        assert_eq!(file_for_dir_str(content_uri).uri(), content_uri);
+    }
+
+    #[test]
+    fn windows_drive_paths_are_not_uris() {
+        let file = file_for_dir_str(r"C:\Users\rnote\notes");
+
+        assert!(file.path().is_some());
+        assert!(!file.uri().starts_with("c:"));
+    }
+
+    #[test]
+    fn workspace_dir_identity_keeps_local_paths_and_remote_uris() {
+        let path = std::env::temp_dir().join("ranote-workspace-dir");
+        assert_eq!(
+            file_dir_identity(&gio::File::for_path(&path)),
+            path.to_string_lossy()
+        );
+
+        let content_uri = "content://com.example.documents/tree/notes";
+        assert_eq!(
+            file_dir_identity(&gio::File::for_uri(content_uri)),
+            content_uri
+        );
+    }
+
+    #[test]
+    fn workspace_dir_lists_entries_through_paths_and_uris() {
+        let dir = std::env::temp_dir().join(format!("ranote-list-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("note.rnote"), b"rnote").unwrap();
+
+        for folder in [
+            gio::File::for_path(&dir),
+            gio::File::for_uri(&format!("file://{}", dir.display())),
+        ] {
+            glib::MainContext::new().block_on(async {
+                let enumerator = folder
+                    .enumerate_children_future(
+                        "standard::name",
+                        gio::FileQueryInfoFlags::NONE,
+                        glib::Priority::DEFAULT,
+                    )
+                    .await
+                    .unwrap();
+                let entries = enumerator
+                    .next_files_future(10, glib::Priority::DEFAULT)
+                    .await
+                    .unwrap()
+                    .into_iter()
+                    .map(|info| info.name())
+                    .collect::<Vec<_>>();
+                assert_eq!(entries, vec![PathBuf::from("note.rnote")]);
+            });
+        }
+
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn missing_workspace_dir_lists_no_entries() {
+        let folder = gio::File::for_uri(&format!(
+            "file://{}/ranote-missing-{}",
+            std::env::temp_dir().display(),
+            uuid::Uuid::new_v4()
+        ));
+
+        glib::MainContext::new().block_on(async {
+            assert!(
+                folder
+                    .enumerate_children_future(
+                        "standard::name",
+                        gio::FileQueryInfoFlags::NONE,
+                        glib::Priority::DEFAULT,
+                    )
+                    .await
+                    .is_err()
+            );
+        });
+    }
+
+    #[test]
+    fn unique_file_in_dir_avoids_collisions_for_paths_and_uris() {
+        let dir = std::env::temp_dir().join(format!("ranote-unique-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("note.rnote"), b"rnote").unwrap();
+        std::fs::write(dir.join("note - 1.rnote"), b"rnote").unwrap();
+
+        for folder in [
+            gio::File::for_path(&dir),
+            gio::File::for_uri(&format!("file://{}", dir.display())),
+        ] {
+            let (file, next) = unique_file_in_dir(&folder, "note", "rnote", 0);
+            assert_eq!(file.basename().unwrap(), PathBuf::from("note - 2.rnote"));
+            assert_eq!(next, 3);
+        }
+
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn unique_file_in_dir_uses_the_requested_file_extension() {
+        let dir = std::env::temp_dir().join(format!("ranote-unique-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("page-1.png"), b"png").unwrap();
+
+        let (file, next) = unique_file_in_dir(&gio::File::for_path(&dir), "page-1", "png", 0);
+        assert_eq!(file.basename().unwrap(), PathBuf::from("page-1 - 1.png"));
+        assert_eq!(next, 2);
+
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn file_location_label_uses_the_path_or_the_uri() {
+        let path = std::env::temp_dir().join("ranote-location.pdf");
+        assert_eq!(
+            file_location_label(&gio::File::for_path(&path)),
+            path.to_string_lossy()
+        );
+
+        let content_uri = "content://com.example.documents/document/report.pdf";
+        assert_eq!(
+            file_location_label(&gio::File::for_uri(content_uri)),
+            content_uri
+        );
+    }
+
+    #[test]
+    fn export_view_target_is_the_folder_for_local_files_and_the_file_for_content_uris() {
+        let dir = std::env::temp_dir().join(format!("ranote-view-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let file = dir.join("report.pdf");
+
+        let local_target = export_view_target(&gio::File::for_path(&file));
+        assert!(files_eq(&local_target, &gio::File::for_path(&dir)));
+
+        let content_file =
+            gio::File::for_uri("content://com.example.documents/document/report.pdf");
+        let content_target = export_view_target(&content_file);
+        assert!(files_eq(&content_target, &content_file));
+
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn create_replace_writes_and_reads_through_file_uri() {
+        let path =
+            std::env::temp_dir().join(format!("ranote-write-{}.rnote", uuid::Uuid::new_v4()));
+        let file = gio::File::for_uri(&format!("file://{}", path.display()));
+        let contents = b"rnote test bytes".to_vec();
+
+        gtk4::glib::MainContext::default().block_on(async {
+            create_replace_file_future(contents.clone(), &file)
+                .await
+                .unwrap();
+            let (bytes, _) = file.load_bytes_future().await.unwrap();
+            assert_eq!(bytes.as_ref(), contents.as_slice());
+        });
+
+        std::fs::remove_file(&path).unwrap();
+    }
+
+    #[test]
+    fn write_export_file_writes_the_prepared_bytes() {
+        let path = std::env::temp_dir().join(format!("ranote-export-{}.pdf", uuid::Uuid::new_v4()));
+        let file = gio::File::for_uri(&format!("file://{}", path.display()));
+        let contents = b"pdf test bytes".to_vec();
+
+        gtk4::glib::MainContext::new().block_on(async {
+            write_export_file(contents.clone(), &file).await.unwrap();
+            let (bytes, _) = file.load_bytes_future().await.unwrap();
+            assert_eq!(bytes.as_ref(), contents.as_slice());
+        });
+
+        std::fs::remove_file(&path).unwrap();
+    }
 }

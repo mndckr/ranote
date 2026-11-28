@@ -1,5 +1,5 @@
 // Imports
-use gettextrs::gettext;
+use crate::i18n::gettext;
 use gtk4::{
     Align, Button, Entry, Grid, Label, Popover, PositionType, glib, glib::clone, prelude::*,
 };

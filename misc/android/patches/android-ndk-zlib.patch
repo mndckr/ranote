@@ -1,0 +1,13 @@
+diff --git a/meson.build b/meson.build
+index a9f4b2a..917176f 100644
+--- a/meson.build
++++ b/meson.build
+@@ -2300,7 +2300,7 @@ gvdb_dep = dependency('gvdb')
+ libm = cc.find_library('m', required : false)
+ libffi_dep = dependency('libffi', version : '>= 3.0.0', default_options: {'werror': false})
+ 
+-libz_dep = dependency('zlib')
++libz_dep = cc.find_library('z', required: true)
+ 
+ libatomic_test_code = '''
+   int main (int argc, char ** argv) {

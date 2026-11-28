@@ -7,10 +7,11 @@ use crate::appwindow::RnAppWindow;
 use crate::canvas::RnCanvas;
 use crate::canvaswrapper::RnCanvasWrapper;
 use crate::config;
+use crate::i18n::{gettext, pgettext};
+use crate::platform::{self, Feature};
 use crate::workspacebrowser::workspacesbar::RnWorkspaceRow;
 use crate::{RnIconPicker, globals};
 use adw::prelude::*;
-use gettextrs::{gettext, pgettext};
 #[allow(deprecated)]
 use gtk4::ShortcutsWindow;
 use gtk4::{
@@ -169,48 +170,29 @@ pub(crate) async fn dialog_close_tab(appwindow: &RnAppWindow, tab_page: &adw::Ta
     let canvas_output_file = canvas.output_file();
 
     let mut save_file = canvas_output_file.clone();
-    let save_folder_path = if let Some(p) = canvas
+    let save_folder = canvas
         .output_file()
         .as_ref()
-        .and_then(|f| f.parent()?.path())
-    {
-        Some(p)
-    } else {
-        appwindow.sidebar().workspacebrowser().dir_list_dir()
-    };
+        .and_then(|f| f.parent())
+        .or_else(|| appwindow.sidebar().workspacebrowser().dir_list_file());
 
     // Handle possible file collisions for new files
     if save_file.is_none()
-        && let Some(save_folder_path) = save_folder_path.as_ref()
+        && let Some(save_folder) = save_folder.as_ref()
     {
-        let base_title = canvas.doc_title_display();
-        let mut test_save_file =
-            gio::File::for_path(save_folder_path.join(base_title.clone() + ".rnote"));
-        let mut doc_postfix = 0;
-
-        // increment as long as as files with same name exist
-        while gio::File::query_exists(&test_save_file, gio::Cancellable::NONE) {
-            doc_postfix += 1;
-            test_save_file = gio::File::for_path(save_folder_path.join(
-                base_title.clone()
-                    + crate::utils::FILE_DUP_SUFFIX_DELIM
-                    + &doc_postfix.to_string()
-                    + ".rnote",
-            ));
-        }
-        save_file = Some(test_save_file);
+        save_file = Some(
+            crate::utils::unique_file_in_dir(save_folder, &canvas.doc_title_display(), "rnote", 0)
+                .0,
+        );
     }
 
     let save_file_display_name = save_file
         .as_ref()
-        .and_then(|f| Some(f.path()?.file_stem()?.to_string_lossy().to_string()))
+        .and_then(|f| Some(f.basename()?.file_stem()?.to_string_lossy().to_string()))
         .unwrap_or_else(|| gettext("- invalid file name -"));
     let save_folder_display_name = save_file
         .as_ref()
-        .and_then(|f| {
-            f.parent()
-                .and_then(|p| Some(p.path()?.display().to_string()))
-        })
+        .and_then(crate::utils::folder_display)
         .unwrap_or_else(|| gettext("- invalid save folder name -"));
 
     let row = adw::ActionRow::builder()
@@ -293,57 +275,34 @@ pub(crate) async fn dialog_close_window(appwindow: &RnAppWindow) {
         }
 
         let mut save_file = canvas_output_file.clone();
-        let save_folder_path = if let Some(p) = canvas
+        let save_folder = canvas
             .output_file()
             .as_ref()
-            .and_then(|f| f.parent()?.path())
-        {
-            Some(p)
-        } else {
-            appwindow.sidebar().workspacebrowser().dir_list_dir()
-        };
+            .and_then(|f| f.parent())
+            .or_else(|| appwindow.sidebar().workspacebrowser().dir_list_file());
 
         // Handle possible file collisions for new files
         if canvas_output_file.is_none()
-            && let Some(save_folder_path) = save_folder_path.as_ref()
+            && let Some(save_folder) = save_folder.as_ref()
         {
-            let base_title = canvas.doc_title_display();
-            let mut test_save_file = if doc_postfix == 0 {
-                gio::File::for_path(save_folder_path.join(base_title.clone() + ".rnote"))
-            } else {
-                gio::File::for_path(save_folder_path.join(
-                    base_title.clone()
-                        + crate::utils::FILE_DUP_SUFFIX_DELIM
-                        + &doc_postfix.to_string()
-                        + ".rnote",
-                ))
-            };
-
-            // increment as long as as files with same name exist
-            while gio::File::query_exists(&test_save_file, gio::Cancellable::NONE) {
-                doc_postfix += 1;
-                test_save_file = gio::File::for_path(save_folder_path.join(
-                    base_title.clone()
-                        + crate::utils::FILE_DUP_SUFFIX_DELIM
-                        + &doc_postfix.to_string()
-                        + ".rnote",
-                ));
-            }
-            save_file = Some(test_save_file);
+            let (unique_file, next_postfix) = crate::utils::unique_file_in_dir(
+                save_folder,
+                &canvas.doc_title_display(),
+                "rnote",
+                doc_postfix,
+            );
+            save_file = Some(unique_file);
             // increment for next iteration
-            doc_postfix += 1;
+            doc_postfix = next_postfix;
         }
 
         let save_file_display_name = save_file
             .as_ref()
-            .and_then(|f| Some(f.path()?.file_stem()?.to_string_lossy().to_string()))
+            .and_then(|f| Some(f.basename()?.file_stem()?.to_string_lossy().to_string()))
             .unwrap_or_else(|| gettext("- invalid file name -"));
         let save_folder_display_name = save_file
             .as_ref()
-            .and_then(|f| {
-                f.parent()
-                    .and_then(|p| Some(p.path()?.display().to_string()))
-            })
+            .and_then(crate::utils::folder_display)
             .unwrap_or_else(|| gettext("- invalid save folder name -"));
 
         let row = adw::ActionRow::builder()
@@ -529,6 +488,7 @@ pub(crate) async fn dialog_edit_selected_workspace(appwindow: &RnAppWindow) {
     let dir_button: Button = builder
         .object("edit_selected_workspace_dir_button")
         .unwrap();
+    dir_button.set_visible(platform::feature_available(Feature::FolderPicker));
     let icon_menubutton: MenuButton = builder
         .object("edit_selected_workspace_icon_menubutton")
         .unwrap();
@@ -611,24 +571,18 @@ pub(crate) async fn dialog_edit_selected_workspace(appwindow: &RnAppWindow) {
                     .title(gettext("Change Workspace Directory"))
                     .modal(true)
                     .accept_label(gettext("Select"))
-                    .initial_file(&gio::File::for_path(preview_row.entry().dir()))
+                    .initial_file(&preview_row.entry().dir_file())
                     .build();
 
                 match filedialog.select_folder_future(Some(&appwindow)).await {
                     Ok(selected_file) => {
-                        if let Some(p) = selected_file
-                            .path()
-                        {
-                            let path_string = p.to_string_lossy().to_string();
-                            dir_label.set_label(&path_string);
-                            preview_row.entry().set_dir(path_string);
+                        let dir = crate::utils::file_dir_identity(&selected_file);
+                        dir_label.set_label(&dir);
+                        preview_row.entry().set_dir(dir);
 
-                            // Update the entry row with the file name of the new selected directory
-                            if let Some(file_name) = p.file_name().map(|n| n.to_string_lossy()) {
-                                name_entryrow.set_text(&file_name);
-                            }
-                        } else {
-                            dir_label.set_label(&gettext("- no directory selected -"));
+                        // Update the entry row with the file name of the new selected directory
+                        if let Some(file_name) = selected_file.basename() {
+                            name_entryrow.set_text(&file_name.to_string_lossy());
                         }
                     }
                     Err(e) => {

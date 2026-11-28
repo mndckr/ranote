@@ -1,0 +1,5 @@
+app/.pixiewood/
+app/subprojects/
+app/pixiewood.ini
+app/.buildconfig
+build/

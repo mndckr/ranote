@@ -4,13 +4,13 @@ mod appsettings;
 mod imp;
 
 // Imports
+use crate::i18n::gettext;
 use crate::{
     FileType, RnApp, RnCanvas, RnCanvasWrapper, RnMainHeader, RnOverlays, RnSidebar, config,
     dialogs, env,
 };
 use adw::{prelude::*, subclass::prelude::*};
 use core::cell::{Ref, RefMut};
-use gettextrs::gettext;
 use gtk4::{Application, IconTheme, Widget, gdk, gio, glib, glib::clone};
 use p2d::math::Vector2;
 use rnote_compose::Color;
@@ -22,7 +22,6 @@ use rnote_engine::pens::PenStyle;
 use rnote_engine::pens::pensconfig::brushconfig::BrushStyle;
 use rnote_engine::pens::pensconfig::shaperconfig::ShaperStyle;
 use rnote_engine::{WidgetFlags, engine::EngineTask};
-use std::path::Path;
 use std::time::Duration;
 use tracing::{debug, error};
 
@@ -293,6 +292,7 @@ impl RnAppWindow {
         }
 
         // Anything that needs to be done right before showing the appwindow
+        crate::platform::watch_lifecycle(self.upcast_ref());
 
         self.refresh_ui();
     }
@@ -435,6 +435,51 @@ impl RnAppWindow {
         tabs
     }
 
+    /// Save every tab with unsaved changes: documents that have an output file
+    /// are written back to it, everything else is saved as a draft in the app
+    /// cache. Used by periodic autosave and by the Android pause handler.
+    pub(crate) fn save_unsaved_tabs(&self) {
+        let appwindow = self.clone();
+
+        for (i, tab) in self.get_all_tabs().iter().enumerate() {
+            let canvas = tab.canvas();
+            if !canvas.unsaved_changes() {
+                continue;
+            }
+            if let Some(output_file) = canvas.output_file() {
+                debug!(
+                    "there are unsaved changes on the tab {:?} with a file on disk, saving",
+                    i
+                );
+                glib::spawn_future_local(clone!(
+                    #[weak]
+                    canvas,
+                    #[weak]
+                    appwindow,
+                    async move {
+                        if let Err(e) = canvas.save_document_to_file(&output_file).await {
+                            error!("Saving document failed, Err: `{e:?}`");
+                            canvas.set_output_file(None);
+                            appwindow
+                                .overlays()
+                                .dispatch_toast_error(&gettext("Saving document failed"));
+                        };
+                    }
+                ));
+            } else {
+                glib::spawn_future_local(clone!(
+                    #[weak]
+                    canvas,
+                    async move {
+                        if let Err(err) = canvas.save_draft().await {
+                            error!("Saving draft failed: {err}");
+                        }
+                    }
+                ));
+            }
+        }
+    }
+
     /// Get the active (selected) tab page child.
     pub(crate) fn active_tab_wrapper(&self) -> Option<RnCanvasWrapper> {
         self.active_tab_page()
@@ -517,10 +562,7 @@ impl RnAppWindow {
             .any(|c| c.save_in_progress())
     }
 
-    pub(crate) fn tabs_query_file_opened(
-        &self,
-        input_file_path: impl AsRef<Path>,
-    ) -> Option<adw::TabPage> {
+    pub(crate) fn tabs_query_file_opened(&self, input_file: &gio::File) -> Option<adw::TabPage> {
         self.overlays()
             .tabview()
             .pages()
@@ -535,14 +577,10 @@ impl RnAppWindow {
                         .downcast_ref::<RnCanvasWrapper>()
                         .unwrap()
                         .canvas()
-                        .output_file()?
-                        .path()?,
+                        .output_file()?,
                 ))
             })
-            .find(|(_, output_file_path)| {
-                crate::utils::paths_abs_eq(output_file_path, input_file_path.as_ref())
-                    .unwrap_or(false)
-            })
+            .find(|(_, output_file)| crate::utils::files_eq(output_file, input_file))
             .map(|(found, _)| found)
     }
 
@@ -672,14 +710,10 @@ impl RnAppWindow {
     ) -> anyhow::Result<Option<RnCanvasWrapper>> {
         let file_imported = match FileType::lookup_file_type(&input_file) {
             FileType::RnoteFile => {
-                let input_file_path = input_file.path().ok_or_else(|| {
-                    anyhow::anyhow!("Could not open file '{input_file:?}', file path is None.")
-                })?;
-
                 // we grab focus
                 self.present();
                 // If the file is already opened in a tab, simply switch to it
-                if let Some(page) = self.tabs_query_file_opened(input_file_path) {
+                if let Some(page) = self.tabs_query_file_opened(&input_file) {
                     self.overlays().tabview().set_selected_page(&page);
                     None
                 } else {
@@ -702,7 +736,7 @@ impl RnAppWindow {
                     let (bytes, _) = input_file.load_bytes_future().await?;
                     let widget_flags = wrapper
                         .canvas()
-                        .load_in_rnote_bytes(bytes.to_vec(), input_file.path())
+                        .load_in_rnote_bytes(bytes.to_vec(), Some(input_file.clone()))
                         .await?;
                     if rnote_file_new_tab {
                         self.append_wrapper_new_tab(&wrapper);
@@ -773,12 +807,10 @@ impl RnAppWindow {
                 Some(wrapper)
             }
             FileType::Folder => {
-                if let Some(dir) = input_file.path() {
-                    self.sidebar()
-                        .workspacebrowser()
-                        .workspacesbar()
-                        .set_selected_workspace_dir(dir);
-                }
+                self.sidebar()
+                    .workspacebrowser()
+                    .workspacesbar()
+                    .set_selected_workspace_file(input_file);
                 None
             }
             FileType::Unsupported => {

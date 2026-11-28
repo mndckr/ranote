@@ -1,7 +1,7 @@
 // Imports
+use crate::i18n::gettext;
 use crate::{RnMainHeader, RnOverlays, RnSidebar, config, dialogs};
 use adw::{prelude::*, subclass::prelude::*};
-use gettextrs::gettext;
 use gtk4::{
     Align, ArrowType, CompositeTemplate, CornerType, CssProvider, PackType, PadActionType,
     PadController, PositionType, gdk, gio, glib, glib::clone,
@@ -12,7 +12,7 @@ use rnote_engine::engine::EngineConfigShared;
 use rnote_engine::pens::PenStyle;
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
-use tracing::{debug, error, trace};
+use tracing::debug;
 
 #[derive(Debug, CompositeTemplate)]
 #[template(resource = "/com/github/flxzt/rnote/ui/appwindow.ui")]
@@ -114,6 +114,11 @@ impl ObjectImpl for RnAppWindow {
         self.parent_constructed();
         let obj = self.obj();
         let _windowsettings = obj.settings();
+
+        // Android toplevels are always the size of the display. A size request
+        // larger than that surface clips the UI instead of growing the window.
+        #[cfg(target_os = "android")]
+        obj.set_size_request(-1, -1);
 
         if config::PROFILE == "devel" {
             obj.add_css_class("devel");
@@ -236,6 +241,9 @@ impl ObjectImpl for RnAppWindow {
         match pspec.name() {
             "pen-sounds" => {
                 let pen_sounds: bool = value.get().expect("The value needs to be of type `bool`");
+                // No audio backend on Android; never let the toggle turn it on.
+                let pen_sounds = pen_sounds
+                    && crate::platform::feature_available(crate::platform::Feature::PenSounds);
                 self.pen_sounds.replace(pen_sounds);
                 if let Some(canvas) = obj.active_tab_canvas() {
                     canvas
@@ -437,44 +445,23 @@ impl RnAppWindow {
     fn update_autosave_handler(&self) {
         let obj = self.obj();
 
-        if let Some(removed_id) = self.autosave_source_id.borrow_mut().replace(
-            glib::source::timeout_add_seconds_local(
-                self.autosave_interval_secs.get(),
-                clone!(#[weak(rename_to=appwindow)] obj, #[upgrade_or] glib::ControlFlow::Break, move || {
-                    // save for all tabs opened in the current window that have unsaved changes
-                    let tabs = appwindow.get_all_tabs();
-
-                    for (i, tab) in tabs.iter().enumerate() {
-                        let canvas = tab.canvas();
-                        if !canvas.unsaved_changes() {
-                            continue;
+        if let Some(removed_id) =
+            self.autosave_source_id
+                .borrow_mut()
+                .replace(glib::source::timeout_add_seconds_local(
+                    self.autosave_interval_secs.get(),
+                    clone!(
+                        #[weak(rename_to=appwindow)]
+                        obj,
+                        #[upgrade_or]
+                        glib::ControlFlow::Break,
+                        move || {
+                            appwindow.save_unsaved_tabs();
+                            glib::ControlFlow::Continue
                         }
-                        if let Some(output_file) = canvas.output_file() {
-                            trace!(
-                                "there are unsaved changes on the tab {:?} with a file on disk, saving",i
-                            );
-                            glib::spawn_future_local(clone!(#[weak] canvas, #[weak] appwindow ,async move {
-                                if let Err(e) = canvas.save_document_to_file(&output_file).await {
-                                    error!("Saving document failed, Err: `{e:?}`");
-                                    canvas.set_output_file(None);
-                                    appwindow
-                                        .overlays()
-                                        .dispatch_toast_error(&gettext("Saving document failed"));
-                                };
-                            }));
-                        } else {
-                            glib::spawn_future_local(clone!(#[weak] canvas, async move {
-                            if let Err(err) = canvas.save_draft().await {
-                                error!("Saving draft failed: {err}");
-                            }
-                            }));
-                        }
-                    }
-
-                    glib::ControlFlow::Continue
-                }),
-            ),
-        ) {
+                    ),
+                ))
+        {
             removed_id.remove();
         }
     }
@@ -541,6 +528,11 @@ impl RnAppWindow {
     fn setup_split_view(&self) {
         let obj = self.obj();
         let split_view = self.split_view.get();
+
+        // A collapsed split view still reports min-sidebar-width as its
+        // minimum, which is wider than a phone screen.
+        #[cfg(target_os = "android")]
+        split_view.set_min_sidebar_width(320.0);
         let left_sidebar_reveal_toggle = obj.main_header().left_sidebar_reveal_toggle();
         let right_sidebar_reveal_toggle = obj.main_header().right_sidebar_reveal_toggle();
 

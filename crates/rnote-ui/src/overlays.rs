@@ -80,6 +80,11 @@ mod imp {
                 .set_measure_overlay(&*self.penpicker, true);
             self.toolbar_overlay
                 .set_measure_overlay(&*self.sidebar_box, true);
+
+            // The palette is wider than a phone screen. Let it fill the
+            // available width and scroll instead of forcing a wider window.
+            #[cfg(target_os = "android")]
+            self.colorpicker.set_halign(gtk4::Align::Fill);
         }
     }
 }

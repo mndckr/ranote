@@ -9,10 +9,11 @@ pub(crate) use input::reject_pointer_input;
 
 // Imports
 use crate::boxed::WidgetFlagsBoxed;
+use crate::i18n::gettext;
+use crate::platform;
 use crate::{RnAppWindow, config, env};
 use chrono::prelude::*;
 use futures::StreamExt;
-use gettextrs::gettext;
 use gtk4::{
     Adjustment, DropTarget, EventControllerKey, EventControllerLegacy, IMMulticontext,
     PropagationPhase, Scrollable, ScrollablePolicy, ScrolledWindow, Widget, gdk, gio, glib,
@@ -30,10 +31,34 @@ use rnote_engine::ext::GraphenePointExt;
 use rnote_engine::ext::GrapheneRectExt;
 use rnote_engine::{Engine, WidgetFlags};
 use std::cell::{Cell, Ref, RefCell, RefMut};
+use std::collections::HashMap;
 use std::path::Path;
 use std::time::Duration;
 use tracing::{debug, error, warn};
 use uuid::Uuid;
+
+/// Load an image resource as a texture. Android has no SVG pixbuf loader
+/// (gdk-pixbuf dropped it), so SVG resources go through the engine's resvg path.
+fn texture_from_resource(path: &str) -> gdk::Texture {
+    #[cfg(target_os = "android")]
+    {
+        let bytes = gio::resources_lookup_data(path, gio::ResourceLookupFlags::NONE)
+            .expect("image resource must exist");
+        let svg_data = std::str::from_utf8(&bytes).expect("svg resource must be UTF-8");
+        let (data, width, height) = rnote_engine::svg::render_svg_data_to_rgba(svg_data)
+            .expect("svg resource must render");
+        return gdk::MemoryTexture::new(
+            width as i32,
+            height as i32,
+            gdk::MemoryFormat::R8g8b8a8Premultiplied,
+            &glib::Bytes::from_owned(data),
+            (width * 4) as usize,
+        )
+        .upcast();
+    }
+    #[cfg(not(target_os = "android"))]
+    gdk::Texture::from_resource(path)
+}
 
 #[derive(Debug, Default)]
 struct Connections {
@@ -93,6 +118,7 @@ mod imp {
         pub(crate) unsaved_changes: Cell<bool>,
         pub(crate) empty: Cell<bool>,
         pub(crate) touch_drawing: Cell<bool>,
+        pub(crate) active_touches: RefCell<HashMap<gdk::EventSequence, std::time::Instant>>,
         pub(crate) show_drawing_cursor: Cell<bool>,
         pub(crate) text_input_enabled: Cell<bool>,
 
@@ -124,7 +150,7 @@ mod imp {
 
             let regular_cursor_icon_name = String::from("cursor-dot-medium");
             let regular_cursor = gdk::Cursor::from_texture(
-                &gdk::Texture::from_resource(
+                &texture_from_resource(
                     (String::from(config::APP_IDPATH)
                         + "icons/scalable/actions/cursor-dot-medium.svg")
                         .as_str(),
@@ -135,7 +161,7 @@ mod imp {
             );
             let drawing_cursor_icon_name = String::from("cursor-dot-small");
             let drawing_cursor = gdk::Cursor::from_texture(
-                &gdk::Texture::from_resource(
+                &texture_from_resource(
                     (String::from(config::APP_IDPATH)
                         + "icons/scalable/actions/cursor-dot-small.svg")
                         .as_str(),
@@ -146,7 +172,7 @@ mod imp {
             );
 
             let invisible_cursor = gdk::Cursor::from_texture(
-                &gdk::Texture::from_resource(
+                &texture_from_resource(
                     (String::from(config::APP_IDPATH)
                         + "icons/scalable/actions/cursor-invisible.svg")
                         .as_str(),
@@ -193,6 +219,7 @@ mod imp {
                 unsaved_changes: Cell::new(false),
                 empty: Cell::new(true),
                 touch_drawing: Cell::new(false),
+                active_touches: RefCell::new(HashMap::new()),
                 show_drawing_cursor: Cell::new(false),
                 text_input_enabled: Cell::new(false),
 
@@ -418,7 +445,7 @@ mod imp {
                     self.regular_cursor_icon_name.replace(icon_name);
 
                     let cursor = gdk::Cursor::from_texture(
-                        &gdk::Texture::from_resource(
+                        &texture_from_resource(
                             (String::from(config::APP_IDPATH)
                                 + &format!(
                                     "icons/scalable/actions/{}.svg",
@@ -440,7 +467,7 @@ mod imp {
                     self.drawing_cursor_icon_name.replace(icon_name);
 
                     let cursor = gdk::Cursor::from_texture(
-                        &gdk::Texture::from_resource(
+                        &texture_from_resource(
                             (String::from(config::APP_IDPATH)
                                 + &format!(
                                     "icons/scalable/actions/{}.svg",
@@ -504,6 +531,8 @@ mod imp {
             }() {
                 error!("Snapshot canvas failed , Err: {e:?}");
             }
+
+            crate::perf::record_frame();
         }
     }
 
@@ -547,6 +576,19 @@ mod imp {
                     super::input::handle_imcontext_text_commit(&canvas, text);
                 }
             ));
+
+            // Desktop IMEs draw the composition themselves. Android's IM context only
+            // emits the signals, so the canvas draws the composition on screen.
+            if platform::app_draws_ime_preedit() {
+                self.key_controller_im_context
+                    .connect_preedit_changed(clone!(
+                        #[weak(rename_to=canvas)]
+                        obj,
+                        move |cx| {
+                            super::input::handle_imcontext_preedit_changed(&canvas, cx);
+                        }
+                    ));
+            }
 
             // Key controller
             self.key_controller.connect_key_pressed(clone!(
@@ -846,6 +888,45 @@ impl RnCanvas {
         }
     }
 
+    /// Updates the active touch sequences and returns how many fingers are down.
+    ///
+    /// `GdkDevice::num-touches` is the maximum number of concurrent touches, not
+    /// the current count, and is 0 on Android, so touch sequences are tracked here.
+    pub(crate) fn track_touch_event(&self, event: &gdk::Event) -> u32 {
+        let mut active_touches = self.imp().active_touches.borrow_mut();
+        let now = std::time::Instant::now();
+
+        // Drop sequences whose TouchEnd/Cancel never arrived (e.g. the sequence
+        // was claimed by a popover or dropped by the input dispatcher). A live
+        // touch is refreshed by its update events; a stale one is not, and would
+        // otherwise inflate the count until the app restarts.
+        active_touches.retain(|_, last_seen| now.duration_since(*last_seen) < std::time::Duration::from_millis(750));
+
+        match event.event_type() {
+            gdk::EventType::TouchBegin => {
+                active_touches.insert(event.event_sequence(), now);
+            }
+            gdk::EventType::TouchEnd | gdk::EventType::TouchCancel => {
+                active_touches.remove(&event.event_sequence());
+            }
+            // Only touch events carry a sequence; asking for one on a pointer
+            // event returns NULL and panics the gdk4-rs boxed wrapper in debug
+            // builds.
+            gdk::EventType::TouchUpdate => {
+                if let Some(last_seen) = active_touches.get_mut(&event.event_sequence()) {
+                    *last_seen = now;
+                }
+            }
+            _ => {}
+        }
+
+        active_touches.len() as u32
+    }
+
+    pub(crate) fn active_touches(&self) -> u32 {
+        self.imp().active_touches.borrow().len() as u32
+    }
+
     #[allow(unused)]
     pub(crate) fn show_drawing_cursor(&self) -> bool {
         self.property::<bool>("show-drawing-cursor")
@@ -1054,8 +1135,7 @@ impl RnCanvas {
     pub(crate) fn doc_folderpath_display(&self) -> String {
         self.output_file()
             .map(|f| {
-                f.parent()
-                    .and_then(|p| Some(p.path()?.display().to_string()))
+                crate::utils::folder_display(&f)
                     .unwrap_or_else(|| gettext("- invalid folder path -"))
             })
             .unwrap_or_else(|| OUTPUT_FILE_NEW_SUBTITLE.to_string())
@@ -1230,8 +1310,9 @@ impl RnCanvas {
             appwindow,
             async move {
                 let (tx, mut rx) = futures::channel::mpsc::unbounded();
-                let Some(file_path) = file.path() else {
-                    warn!("Can't create watcher for file that has no path");
+                let Some(file_path) = crate::utils::local_watch_path(&file) else {
+                    // Content URIs (Android SAF) have no filesystem path to watch.
+                    debug!("Not watching output file without a local path: `{file:?}`");
                     return;
                 };
                 let Some(parent_path) = file_path.parent() else {

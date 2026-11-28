@@ -2,11 +2,11 @@
 
 // Imports
 use crate::canvas::RnCanvas;
+use crate::i18n::gettext;
 use crate::{RnAppWindow, config};
 use adw::prelude::*;
 use anyhow::anyhow;
 use futures::StreamExt;
-use gettextrs::gettext;
 use gtk4::{Builder, Button, FileDialog, FileFilter, Label, ToggleButton, gio, glib, glib::clone};
 use gtk4::{graphene, gsk};
 use hayro::hayro_syntax;
@@ -27,6 +27,10 @@ pub(crate) async fn filedialog_open_doc(appwindow: &RnAppWindow) {
     } else {
         filter.add_mime_type("application/rnote");
     }
+    // The Android picker filters by MIME only; SAF documents without a
+    // registered MIME type are reported as octet-stream.
+    #[cfg(target_os = "android")]
+    filter.add_mime_type("application/octet-stream");
     filter.add_suffix("rnote");
     filter.set_name(Some(&gettext(".rnote")));
 
@@ -41,8 +45,8 @@ pub(crate) async fn filedialog_open_doc(appwindow: &RnAppWindow) {
         .default_filter(&filter)
         .build();
 
-    if let Some(current_workspace_dir) = appwindow.sidebar().workspacebrowser().dir_list_dir() {
-        filedialog.set_initial_folder(Some(&gio::File::for_path(current_workspace_dir)));
+    if let Some(current_workspace_dir) = appwindow.sidebar().workspacebrowser().dir_list_file() {
+        filedialog.set_initial_folder(Some(&current_workspace_dir));
     }
 
     match filedialog.open_future(Some(appwindow)).await {
@@ -97,8 +101,8 @@ pub(crate) async fn filedialog_import_file(appwindow: &RnAppWindow) {
         .default_filter(&filter)
         .build();
 
-    if let Some(current_workspace_dir) = appwindow.sidebar().workspacebrowser().dir_list_dir() {
-        dialog.set_initial_folder(Some(&gio::File::for_path(current_workspace_dir)));
+    if let Some(current_workspace_dir) = appwindow.sidebar().workspacebrowser().dir_list_file() {
+        dialog.set_initial_folder(Some(&current_workspace_dir));
     }
 
     match dialog.open_future(Some(appwindow)).await {

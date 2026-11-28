@@ -23,6 +23,12 @@ mod imp {
     #[derive(Debug)]
     pub(crate) struct RnApp {
         pub(crate) app_settings: Option<gio::Settings>,
+        /// Android: set by `activate` so the `open` that GApplication emits
+        /// right after a cold-start activation opens in the new window. A warm
+        /// start arrives without `activate` and gets its own window, which the
+        /// new Android activity binds to.
+        #[cfg(target_os = "android")]
+        pub(crate) activated_window_open: std::cell::Cell<bool>,
     }
 
     impl Default for RnApp {
@@ -35,7 +41,11 @@ mod imp {
                 ))
             });
 
-            Self { app_settings }
+            Self {
+                app_settings,
+                #[cfg(target_os = "android")]
+                activated_window_open: std::cell::Cell::new(false),
+            }
         }
     }
 
@@ -53,15 +63,52 @@ mod imp {
             let obj = self.obj();
             self.parent_startup();
 
+            // Tuning: UI transition animations compete with touch drawing for
+            // frames on Android tablets; the spike only needs direct manipulation.
+            #[cfg(target_os = "android")]
+            if let Some(settings) = gtk4::Settings::default() {
+                settings.set_gtk_enable_animations(false);
+            }
+
             self.setup_buildables();
             obj.setup_actions();
             obj.setup_action_accels();
+
+            // Android pauses the activity without closing the GTK windows, so
+            // flush unsaved work through the platform seam. Desktop never
+            // pauses, so the handler never runs there.
+            crate::platform::on_pause(|| {
+                let Some(application) = gio::Application::default()
+                    .and_then(|application| application.downcast::<gtk4::Application>().ok())
+                else {
+                    return;
+                };
+                for window in application.windows() {
+                    if let Some(appwindow) = window.downcast_ref::<RnAppWindow>() {
+                        appwindow.save_unsaved_tabs();
+                    }
+                }
+            });
         }
 
         fn activate(&self) {
             self.parent_activate();
 
-            // init and show a new window
+            #[cfg(target_os = "android")]
+            {
+                // GApplication emits `open` right after this activation on a
+                // cold start; let that call reuse the window created below.
+                self.activated_window_open.set(true);
+                let app = self.obj().downgrade();
+                glib::idle_add_local_once(move || {
+                    if let Some(app) = app.upgrade() {
+                        app.imp().activated_window_open.set(false);
+                    }
+                });
+            }
+
+            // Android hands "Open with" files over as `GApplication::open` and
+            // GTK emits it right after this activation on a cold start.
             self.new_appwindow_init_show(None);
         }
 
@@ -69,10 +116,20 @@ mod imp {
             self.parent_open(files, hint);
 
             let input_file = files.first().cloned();
-            if let Some(appwindow) = self
-                .obj()
-                .active_window()
-                .map(|w| w.downcast::<RnAppWindow>().unwrap())
+
+            // Desktop reuses the active window. On Android a cold start reuses
+            // the activation window, while a warm start must create a window so
+            // the new activity has a toplevel to bind to.
+            #[cfg(target_os = "android")]
+            let reuse_active = self.activated_window_open.replace(false);
+            #[cfg(not(target_os = "android"))]
+            let reuse_active = true;
+
+            if reuse_active
+                && let Some(appwindow) = self
+                    .obj()
+                    .active_window()
+                    .map(|w| w.downcast::<RnAppWindow>().unwrap())
             {
                 if let Some(input_file) = input_file {
                     glib::spawn_future_local(clone!(
@@ -83,9 +140,9 @@ mod imp {
                         }
                     ));
                 }
-            } else {
-                self.new_appwindow_init_show(input_file);
+                return;
             }
+            self.new_appwindow_init_show(input_file);
         }
     }
 

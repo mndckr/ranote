@@ -1,0 +1,30 @@
+diff --git a/gdk/android/gdkandroidinit.c b/gdk/android/gdkandroidinit.c
+index 405a77c..708ae5b 100644
+--- a/gdk/android/gdkandroidinit.c
++++ b/gdk/android/gdkandroidinit.c
+@@ -750,8 +750,24 @@ gdk_android_get_env (void)
+   if (G_UNLIKELY (!gdk_android_vm))
+     return NULL;
+   gint rc = (*gdk_android_vm)->GetEnv (gdk_android_vm, (void **) &gdk_android_thread_env, JNI_VERSION_1_6);
++  if (G_UNLIKELY (rc == JNI_EDETACHED))
++    {
++      /* Worker threads (e.g. GIO's thread pools calling into the content
++       * file code) reach this without ever having been attached to the JVM.
++       * Attach them on first use instead of returning NULL, which the
++       * content file methods would dereference (SIGSEGV). */
++      JavaVMAttachArgs args = {
++        .version = JNI_VERSION_1_6,
++        .name = NULL,
++        .group = NULL
++      };
++      rc = (*gdk_android_vm)->AttachCurrentThread (gdk_android_vm, &gdk_android_thread_env, &args);
++    }
+   if (G_UNLIKELY (rc != JNI_OK))
+-    g_critical ("Unable to get env for the current thread. Is is attached?");
++    {
++      gdk_android_thread_env = NULL;
++      g_critical ("Unable to get env for the current thread. Is is attached?");
++    }
+   return gdk_android_thread_env;
+ }
+

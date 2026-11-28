@@ -1,6 +1,7 @@
 # Specify sources
 rnote_engine_sources = files(
     'audioplayer.rs',
+    'audioplayer_silent.rs',
     'camera.rs',
     'document/background.rs',
     'document/config.rs',
@@ -66,6 +67,7 @@ rnote_engine_sources = files(
     'strokes/brushstroke.rs',
     'strokes/content.rs',
     'strokes/mod.rs',
+    'strokes/resize.rs',
     'strokes/shapestroke.rs',
     'strokes/stroke.rs',
     'strokes/textstroke.rs',
